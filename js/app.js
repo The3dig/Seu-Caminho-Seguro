@@ -1,5 +1,5 @@
 import { getSettings, saveSettings, listTrips, saveTrip, loadTrip, deleteTrip, uid, kv } from './store.js';
-import { geocode, route, cityAt } from './routing.js';
+import { geocode, route, cityAt, addressAt } from './routing.js';
 import { fetchAlongRoute, fuelGaps, CATEGORIES, lodgingNear, radarsNear, fetchSpeedLimits } from './pois.js';
 import { buildPlan, DEFAULT_PREFS, money } from './planner.js';
 import { makeLine, locate, pointAt, fmtDist, fmtDur, fmtClock } from './geo.js';
@@ -137,7 +137,11 @@ function show(id) {
   if (id === 'v-radars') renderRadarList();
   if (id === 'v-music') renderMusic();
   if (id === 'v-settings') renderSettings();
-  if (id === 'v-plan') { $('#walkWarn').hidden = !S.settings.walkTest; renderQuick(); }
+  if (id === 'v-plan') {
+    $('#walkWarn').hidden = !S.settings.walkTest;
+    renderQuick();
+    if (!$('#from').value && (!S.here || Date.now() - S.here.t > 60000)) locateMe({ center: !S.trip });
+  }
   if (id === 'v-places') renderPlaces();
   if (id === 'v-cities') renderCityReport();
   if (id === 'v-trip') initTripForm();
@@ -396,16 +400,73 @@ $('#spPrev').onclick = () => Spotify.prev().then(() => setTimeout(spRefresh, 700
 // ================= Planejamento =================
 function getPosition(opts = {}) {
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error('GPS indisponível'));
+    if (!navigator.geolocation) return reject(new Error('GPS indisponível neste aparelho.'));
+    // Alguns celulares nunca respondem se a permissão ficar "pendurada": trava extra.
+    const guard = setTimeout(() => reject(new Error('não consegui sua localização. Confira se a localização está permitida para o app/Safari.')), 20000);
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      (e) => reject(new Error('Não foi possível obter a localização: ' + e.message)),
+      (p) => {
+        clearTimeout(guard);
+        S.here = { ...(S.here || {}), lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, t: Date.now() };
+        resolve({ lat: p.coords.latitude, lon: p.coords.longitude });
+      },
+      (e) => {
+        clearTimeout(guard);
+        const why = e.code === 1 ? 'a localização está bloqueada. Permita em Ajustes › Privacidade › Serviços de Localização › Safari (ou o app).' : 'não consegui sua localização agora (' + e.message + ').';
+        reject(new Error(why));
+      },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000, ...opts },
     );
   });
 }
 
-$('#btnMyLoc').onclick = () => { $('#from').value = ''; $('#from').placeholder = 'Minha localização atual'; };
+// ---------- Saída = onde você está ----------
+let hereMarker = null;
+let lastAddrAt = null;
+async function locateMe({ center = false } = {}) {
+  const box = $('#fromHere');
+  try {
+    const p = await getPosition({ maximumAge: 15000 });
+    box.classList.remove('err');
+    if (!S.nav) {
+      const html = '<div class="me"></div>';
+      if (!hereMarker) hereMarker = L.marker([p.lat, p.lon], { icon: L.divIcon({ html, className: '', iconSize: [22, 22], iconAnchor: [11, 11] }), zIndexOffset: 900 });
+      hereMarker.setLatLng([p.lat, p.lon]);
+      if (!layers.me.hasLayer(hereMarker)) layers.me.addLayer(hereMarker);
+      if (center) map.setView([p.lat, p.lon], 15);
+    }
+    // Endereço só se mudou de lugar (economiza consultas).
+    if (!lastAddrAt || Math.hypot((p.lat - lastAddrAt.lat) * 111000, (p.lon - lastAddrAt.lon) * 111000) > 80) {
+      lastAddrAt = p;
+      $('#fromHereText').textContent = `📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`;
+      try {
+        const addr = await addressAt(p.lat, p.lon);
+        if (addr) { S.here.label = addr; $('#fromHereText').textContent = addr; }
+      } catch { /* sem internet: fica a coordenada */ }
+    } else if (S.here?.label) {
+      $('#fromHereText').textContent = S.here.label;
+    }
+    return S.here;
+  } catch (e) {
+    box.classList.add('err');
+    $('#fromHereText').textContent = '⚠ ' + e.message.charAt(0).toUpperCase() + e.message.slice(1);
+    return null;
+  }
+}
+
+// Texto na saída: vazio = onde você está (mostra o cartão), senão o campo.
+function setFrom(text) {
+  $('#from').value = text || '';
+  $('#fromHere').hidden = !!text;
+  $('#fromRow').hidden = !text;
+}
+$('#btnFromOther').onclick = () => {
+  $('#fromHere').hidden = true;
+  $('#fromRow').hidden = false;
+  $('#from').focus();
+};
+$('#fromHere').onclick = (e) => { if (e.target.id !== 'btnFromOther' && $('#fromHere').classList.contains('err')) locateMe({ center: true }); };
+
+$('#btnMyLoc').onclick = () => { setFrom(''); locateMe({ center: true }); };
 
 $('#btnAddVia').onclick = () => {
   const wrap = document.createElement('div');
@@ -429,14 +490,18 @@ async function resolvePlace(text, what, boxSel = '#geoResults') {
 
 // Vários resultados: mostra a lista para o usuário escolher o certo.
 function chooseResult(results, what, boxSel = '#geoResults') {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve0, reject0) => {
     const box = $(boxSel);
+    const done = (fn, v) => { S.pendingChoose = null; box.innerHTML = ''; fn(v); };
+    const resolve = (v) => done(resolve0, v);
+    const reject = (e) => done(reject0, e);
+    S.pendingChoose = () => reject(new Error('Busca cancelada.'));
+    S.onChoosing?.(what);
     box.innerHTML = `<p class="hint">Qual ${what}?</p><ul class="list geo-pick">${results.map((r, i) =>
       `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label.split(',').slice(1).join(',').trim())}</div></div></li>`).join('')}
       <li data-i="-1"><div class="grow sub">Nenhum destes — vou digitar de outro jeito</div></li></ul>`;
     for (const li of box.querySelectorAll('li')) {
       li.onclick = () => {
-        box.innerHTML = '';
         const i = +li.dataset.i;
         if (i < 0) reject(new Error('Busca cancelada. Tente incluir a cidade ou o bairro.'));
         else resolve(results[i]);
@@ -451,46 +516,82 @@ function goTo(place) {
   const text = place.name ? `${place.icon || '📍'} ${place.name}` : place.label;
   S.presets.set(text, { lat: place.lat, lon: place.lon, label: text });
   $('#to').value = text;
-  $('#from').value = '';
+  setFrom('');
   $('#vias').innerHTML = '';
   show('v-plan');
   $('#btnRoute').click();
 }
 
 $('#btnSwap').onclick = () => {
-  const a = $('#from').value, b = $('#to').value;
-  $('#from').value = b;
+  const a = $('#from').value || (S.here?.label ? '' : ''), b = $('#to').value;
+  setFrom(b);
   $('#to').value = a;
   if (!a) toast('Saída = destino anterior. Agora escolha o novo destino (ou toque em 🏠).', 4000);
 };
 
-$('#btnRoute').onclick = async () => {
+let routeGen = 0;
+function routeBtn(text, busy = true) {
   const btn = $('#btnRoute');
+  btn.textContent = text;
+  btn.classList.toggle('busy', busy);
+}
+
+// Posição atual: usa a que já temos (até 2 min) para não esperar o GPS de novo.
+async function hereNow() {
+  if (S.here && Date.now() - S.here.t < 120000) return { lat: S.here.lat, lon: S.here.lon, label: 'Minha localização' };
+  return { ...(await getPosition()), label: 'Minha localização' };
+}
+
+$('#btnRoute').onclick = async () => {
+  // Já está buscando? O botão vira "cancelar".
+  if (S.routeBusy) {
+    routeGen++;
+    S.pendingChoose?.();
+    S.routeBusy = false;
+    routeBtn('Traçar rota', false);
+    $('#geoResults').innerHTML = '';
+    return;
+  }
   const to = $('#to').value.trim();
   if (!to) return toast('Informe o destino.');
-  btn.disabled = true;
-  btn.textContent = 'Calculando…';
+  const gen = ++routeGen;
+  const alive = () => gen === routeGen;
+  S.routeBusy = true;
+  S.onChoosing = (what) => routeBtn(`↓ Escolha o ${what} na lista (ou toque para cancelar)`);
   $('#routeAlts').innerHTML = '';
   $('#prepareBox').hidden = true;
   $('#tripSummary').innerHTML = '';
   try {
     const fromTxt = $('#from').value.trim();
-    const from = fromTxt ? await resolvePlace(fromTxt, 'saída') : { ...(await getPosition()), label: 'Minha localização' };
+    routeBtn(fromTxt ? '🔎 Procurando a saída… (toque para cancelar)' : '📍 Pegando sua localização… (toque para cancelar)');
+    const from = fromTxt ? await resolvePlace(fromTxt, 'saída') : await hereNow();
+    if (!alive()) return;
     const vias = [];
     for (const inp of document.querySelectorAll('#vias .via')) {
-      if (inp.value.trim()) vias.push(await resolvePlace(inp.value.trim(), 'parada'));
+      if (!inp.value.trim()) continue;
+      routeBtn('🔎 Procurando as paradas… (toque para cancelar)');
+      vias.push(await resolvePlace(inp.value.trim(), 'parada'));
+      if (!alive()) return;
     }
+    routeBtn('🔎 Procurando o destino… (toque para cancelar)');
     const dest = await resolvePlace(to, 'destino');
+    if (!alive()) return;
+    routeBtn('🛣️ Calculando a rota… (toque para cancelar)');
+    const alts = await route([from, ...vias, dest], { foot: S.settings.walkTest });
+    if (!alive()) return;
     S.points = [from, ...vias, dest];
-    S.alts = await route(S.points, { foot: S.settings.walkTest });
+    S.alts = alts;
     Places.addRecent(dest).then(renderSuggestions);
     S.altIdx = 0;
     renderAlts();
   } catch (e) {
-    toast('⚠ ' + e.message, 8000);
+    if (alive() && e.message !== 'Busca cancelada.') toast('⚠ ' + e.message.charAt(0).toUpperCase() + e.message.slice(1), 9000);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Traçar rota';
+    if (alive()) {
+      S.routeBusy = false;
+      S.onChoosing = null;
+      routeBtn('Traçar rota', false);
+    }
   }
 };
 
@@ -670,7 +771,7 @@ async function renderSavedTrips() {
       const ta = a.label.split(',')[0], tb = b.label === 'Minha localização' ? 'Ponto de saída da ida' : b.label.split(',')[0];
       S.presets.set(ta, a);
       S.presets.set(tb, b);
-      $('#from').value = ta;
+      setFrom(ta);
       $('#to').value = tb;
       $('#vias').innerHTML = '';
       $('#btnRoute').click();
@@ -689,6 +790,7 @@ $('#btnFree').onclick = () => startDrive(null, false);
 // ================= Dirigindo =================
 async function startDrive(trip, simulate, resume = null) {
   Voice.unlock();
+  layers.me.clearLayers(); // tira o ponto de "onde você está" do planejamento
   S.rec = null;
   if (!simulate && S.settings.recordDrives) {
     const existing = resume?.driveId ? await Places.loadDrive(resume.driveId) : null;
@@ -1189,7 +1291,8 @@ $('#tpBuild').onclick = async () => {
   try {
     status('🔎 Encontrando os lugares…');
     const fromTxt = $('#tpFrom').value.trim();
-    const from = fromTxt ? await resolvePlace(fromTxt, 'saída', '#tpGeo') : { ...(await getPosition()), label: 'Minha localização' };
+    S.onChoosing = (what) => status(`↓ Escolha o ${what} na lista abaixo.`);
+    const from = fromTxt ? await resolvePlace(fromTxt, 'saída', '#tpGeo') : await hereNow();
     const stops = [];
     for (const row of document.querySelectorAll('#tpStops .stop-row')) {
       const t = row.querySelector('.tp-stop').value.trim();

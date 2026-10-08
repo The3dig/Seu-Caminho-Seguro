@@ -53,9 +53,14 @@
     <p class="hint">A rota é definida agora e <b>nunca muda</b> durante a viagem, mesmo com trânsito. Dica: toque e segure no mapa para colocar um radar.</p>
     <p class="warn" id="walkWarn" hidden>🚶 Modo teste a pé ligado (Ajustes): rota para pedestre e avisos em distâncias curtas.</p>
     <label>Saída</label>
-    <div class="row">
-      <input id="from" placeholder="Minha localização atual" autocomplete="off">
-      <button class="btn icon" id="btnMyLoc" title="Usar minha localização">📍</button>
+    <div class="from-here" id="fromHere">
+      <span class="dot"></span>
+      <div class="grow"><div class="title">Onde você está agora</div><div class="sub" id="fromHereText">Procurando sua localização…</div></div>
+      <button class="btn" id="btnFromOther">trocar</button>
+    </div>
+    <div class="row" id="fromRow" hidden>
+      <input id="from" placeholder="Endereço, cidade ou “casa”" autocomplete="off">
+      <button class="btn icon" id="btnMyLoc" title="Voltar para minha localização">📍</button>
     </div>
     <div id="vias"></div>
     <button class="btn link" id="btnAddVia">+ passar obrigatoriamente por… (força o caminho)</button>
@@ -152,7 +157,7 @@
     <h2>🧭 Planeje sua viagem</h2>
     <p class="hint">Diga de onde sai, para onde vai e onde quer parar. O app monta o roteiro dia a dia com pausas em postos e restaurantes, onde dormir, pedágios e combustível.</p>
     <label>Saída</label>
-    <input id="tpFrom" placeholder="Minha localização atual (ou “casa”)" autocomplete="off">
+    <input id="tpFrom" placeholder="📍 Onde você está agora (ou digite outro lugar)" autocomplete="off">
     <label>Destino</label>
     <input id="tpTo" placeholder="Cidade ou endereço" autocomplete="off">
     <label>Cidades onde quer parar (opcional)</label>

@@ -3,6 +3,20 @@
 import { makeLine, locate, simplify } from './geo.js';
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+
+// fetch com limite de tempo: internet fraca nunca deixa o app "calculando" pra sempre.
+export async function fetchT(url, opts = {}, ms = 20000) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctl.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('o servidor demorou demais para responder (internet fraca?). Tente de novo.');
+    throw new Error('sem conexão com a internet. Tente de novo quando tiver sinal.');
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const OSRM = 'https://router.project-osrm.org/route/v1/driving/';
 // Rota para pedestre (usada no modo teste a pé). Servidor do OpenStreetMap Alemanha.
 const OSRM_FOOT = 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/';
@@ -25,7 +39,7 @@ export async function geocode(text) {
   const c = parseCoords(text);
   if (c) return [c];
   const url = `${NOMINATIM}?format=jsonv2&limit=5&countrycodes=br&accept-language=pt-BR&q=${encodeURIComponent(text)}`;
-  const res = await fetch(url);
+  const res = await fetchT(url, {}, 15000);
   if (!res.ok) throw new Error('Falha na busca de endereço (' + res.status + ')');
   const data = await res.json();
   return data.map((d) => ({ lat: +d.lat, lon: +d.lon, label: d.display_name }));
@@ -91,13 +105,13 @@ export async function route(points, { foot = false } = {}) {
   let res;
   if (foot) {
     try {
-      res = await fetch(OSRM_FOOT + qs);
+      res = await fetchT(OSRM_FOOT + qs, {}, 20000);
       if (!res.ok) res = null;
     } catch {
       res = null; // cai para a rota de carro
     }
   }
-  if (!res) res = await fetch(OSRM + qs);
+  if (!res) res = await fetchT(OSRM + qs, {}, 25000);
   if (!res.ok) throw new Error('Falha ao calcular rota (' + res.status + ')');
   const data = await res.json();
   if (data.code !== 'Ok') throw new Error('Rota não encontrada: ' + (data.message || data.code));
@@ -144,7 +158,7 @@ function buildRoute(r) {
 // Cidade/estado de um ponto (para pernoites e para o diário de cidades).
 // Lança erro se estiver sem internet — quem chama decide se tenta depois.
 export async function placeAt(lat, lon) {
-  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&accept-language=pt-BR&lat=${lat}&lon=${lon}`);
+  const res = await fetchT(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&accept-language=pt-BR&lat=${lat}&lon=${lon}`, {}, 15000);
   if (!res.ok) throw new Error('reverse ' + res.status);
   const d = await res.json();
   const a = d.address || {};
@@ -164,4 +178,15 @@ export async function cityAt(lat, lon) {
   } catch {
     return '';
   }
+}
+
+// Endereço da rua num ponto (para mostrar "Saindo de: Rua X, Bairro").
+export async function addressAt(lat, lon) {
+  const res = await fetchT(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR&lat=${lat}&lon=${lon}`, {}, 12000);
+  if (!res.ok) throw new Error('reverse ' + res.status);
+  const a = (await res.json()).address || {};
+  const street = [a.road || a.pedestrian || a.footway || a.highway, a.house_number].filter(Boolean).join(', ');
+  const area = a.suburb || a.neighbourhood || a.quarter || a.village || '';
+  const city = a.city || a.town || a.municipality || '';
+  return [street, area, city].filter(Boolean).join(' · ') || city;
 }

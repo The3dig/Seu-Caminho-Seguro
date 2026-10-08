@@ -1,6 +1,7 @@
 // Busca no OpenStreetMap (Overpass) postos, restaurantes, paradas, hotéis e
 // radares ao longo da rota. Tudo é salvo junto com a viagem para uso offline.
 import { simplify, locate, pointAt, projSeg, bearing, angleDiff } from './geo.js';
+import { fetchT } from './routing.js';
 
 const OVERPASS = [
   'https://overpass-api.de/api/interpreter',
@@ -29,11 +30,11 @@ async function overpass(query) {
   let lastErr;
   for (const url of OVERPASS) {
     try {
-      const res = await fetch(url, {
+      const res = await fetchT(url, {
         method: 'POST',
         body: 'data=' + encodeURIComponent(query),
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
+      }, 100000); // trechos longos de estrada podem levar ~1 min
       if (res.ok) return (await res.json()).elements || [];
       lastErr = new Error('Overpass ' + res.status);
     } catch (e) {

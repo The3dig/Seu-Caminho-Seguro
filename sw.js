@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v10';
+const VERSION = 'v11';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 6000;
