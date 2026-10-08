@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0f1720">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Seu Caminho Seguro</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- ========== ABERTURA: "web viagem" ========== -->
+  <section id="v-intro" class="view intro">
+    <div class="sky">
+      <div class="sun"></div>
+      <div class="hills"></div>
+      <div class="road"><div class="stripes"></div></div>
+      <div class="car">🚗</div>
+    </div>
+    <div class="intro-content">
+      <p class="intro-hello" id="introHello">Boa viagem</p>
+      <h1 class="app-name" data-appname>Seu Caminho Seguro</h1>
+      <p class="intro-sub">Rota fixa · radares que você confirma · postos na estrada</p>
+      <div class="now-playing" id="introPlaying"></div>
+    </div>
+    <div class="intro-bottom">
+      <div class="intro-actions">
+        <button class="btn big gold" id="btnIntroMusic">🎷 Tocar a trilha da viagem</button>
+        <button class="btn big" id="btnIntroGo">Começar ➜</button>
+      </div>
+      <p class="hint" id="introNoMusic" hidden>Ainda não há músicas salvas. Adicione seus MP3 do Nat King Cole na aba 🎵 Músicas para tocarem aqui, mesmo offline.</p>
+    </div>
+  </section>
+
+  <!-- ========== PLANEJAR ========== -->
+  <section id="v-plan" class="view sheet">
+    <h2>Planejar viagem</h2>
+    <p class="hint">A rota é definida agora e <b>nunca muda</b> durante a viagem, mesmo com trânsito.</p>
+    <label>Saída</label>
+    <div class="row">
+      <input id="from" placeholder="Minha localização atual" autocomplete="off">
+      <button class="btn icon" id="btnMyLoc" title="Usar minha localização">📍</button>
+    </div>
+    <div id="vias"></div>
+    <button class="btn link" id="btnAddVia">+ passar obrigatoriamente por… (força o caminho)</button>
+    <label>Destino</label>
+    <input id="to" placeholder="Cidade, endereço, coordenadas ou link do Google Maps/Waze" autocomplete="off">
+    <button class="btn primary wide" id="btnRoute">Traçar rota</button>
+    <div id="geoResults"></div>
+    <div id="routeAlts"></div>
+
+    <div id="prepareBox" hidden>
+      <label>Nome da viagem</label>
+      <input id="tripName" placeholder="Ex.: Casa → Praia">
+      <button class="btn primary wide" id="btnPrepare">⬇ Preparar viagem offline</button>
+      <div class="progress" id="prepProgress" hidden><div></div></div>
+      <p class="hint">Baixa postos, restaurantes, paradas, hotéis e radares do OpenStreetMap ao longo da rota e salva tudo no celular.</p>
+    </div>
+
+    <div id="tripSummary"></div>
+
+    <h3>Viagens salvas</h3>
+    <ul class="list" id="savedTrips"></ul>
+    <button class="btn wide" id="btnFree">📷 Dirigir sem rota (só alertas de radar)</button>
+  </section>
+
+  <!-- ========== DIRIGINDO ========== -->
+  <section id="v-drive" class="view drive" hidden>
+    <div class="turn" id="turn">
+      <div class="turn-arrow" id="turnArrow">⬆</div>
+      <div class="turn-info">
+        <div class="turn-dist" id="turnDist">--</div>
+        <div class="turn-text" id="turnText">Aguardando GPS…</div>
+      </div>
+    </div>
+    <div class="offroute" id="offRoute" hidden>
+      ⚠ Fora da rota planejada <span id="offDist"></span><br><small>A rota não será recalculada — volte para o trajeto</small>
+    </div>
+
+    <div class="radar-alert" id="radarAlert" hidden>
+      <div class="radar-sign"><span id="raLimit">!</span></div>
+      <div>
+        <div class="ra-title">RADAR</div>
+        <div class="ra-dist" id="raDist">--</div>
+      </div>
+    </div>
+
+    <div class="drive-side">
+      <button class="btn round" id="btnRecenter" title="Centralizar">🎯</button>
+      <button class="btn round" id="btnDriveMusic" title="Música">🎵</button>
+      <button class="btn round" id="btnStop" title="Encerrar">⏹</button>
+    </div>
+
+    <div class="drive-bottom">
+      <div class="pois" id="poiStrip"></div>
+      <div class="hud">
+        <div class="speed" id="speedBox"><b id="spd">0</b><small>km/h</small></div>
+        <div class="eta">
+          <b id="etaClock">--:--</b>
+          <small id="etaRem">--</small>
+        </div>
+        <button class="btn mark" id="btnMark">📷<br>+ RADAR</button>
+      </div>
+    </div>
+
+    <div class="confirm" id="confirmBox" hidden>
+      <p id="confirmText">Tinha radar aqui?</p>
+      <div class="row">
+        <button class="btn big ok" id="btnYes">✅ Tinha</button>
+        <button class="btn big no" id="btnNo">❌ Não tinha</button>
+      </div>
+      <div class="confirm-timer"><div></div></div>
+    </div>
+
+    <div class="confirm" id="markBox" hidden>
+      <p>📷 Radar marcado! Qual o limite?</p>
+      <div class="chips" id="limitChips"></div>
+      <button class="btn link" id="btnUndoMark">desfazer</button>
+    </div>
+  </section>
+
+  <!-- ========== RADARES ========== -->
+  <section id="v-radars" class="view sheet" hidden>
+    <h2>Meus radares</h2>
+    <div class="stats" id="radarStats"></div>
+    <div class="row">
+      <select id="radarFilter">
+        <option value="all">Todos</option>
+        <option value="confirmado">Confirmados</option>
+        <option value="meu">Marcados por mim</option>
+        <option value="osm">Do mapa (OSM)</option>
+        <option value="inativo">Inativos</option>
+      </select>
+      <button class="btn" id="btnRadarMap">🗺 Ver no mapa</button>
+    </div>
+    <ul class="list" id="radarList"></ul>
+    <h3>Backup / importar</h3>
+    <p class="hint">Importe listas de radares em CSV (lat,lon,limite), GPX ou KML (ex.: exportado do Google My Maps). Faça backup antes de trocar de celular.</p>
+    <div class="row wrap">
+      <label class="btn file">📥 Importar<input type="file" id="radarImport" accept=".json,.csv,.txt,.gpx,.kml" hidden></label>
+      <button class="btn" id="btnExportJson">💾 Backup (JSON)</button>
+      <button class="btn" id="btnExportCsv">📄 Exportar CSV</button>
+    </div>
+  </section>
+
+  <!-- ========== MÚSICAS ========== -->
+  <section id="v-music" class="view sheet" hidden>
+    <h2>Trilha da viagem</h2>
+    <p class="hint">Escolha seus arquivos de música (ex.: Nat King Cole — <i>Unforgettable</i>, <i>L-O-V-E</i>, <i>Route 66</i>…). Eles ficam guardados no celular e tocam offline na abertura e durante a viagem. A música abaixa sozinha quando há um aviso.</p>
+    <label class="btn primary wide file">➕ Adicionar músicas<input type="file" id="musicFiles" accept="audio/*" multiple hidden></label>
+    <div class="player">
+      <button class="btn round" id="mPrev">⏮</button>
+      <button class="btn round big" id="mPlay">▶</button>
+      <button class="btn round" id="mNext">⏭</button>
+      <button class="btn round" id="mShuffle">🔀</button>
+    </div>
+    <p class="now" id="mNow">—</p>
+    <ul class="list" id="trackList"></ul>
+    <h3>Sem os arquivos?</h3>
+    <p class="hint">Dá pra abrir no app de música (precisa de internet ou de playlist baixada lá):</p>
+    <div class="row wrap">
+      <a class="btn" target="_blank" rel="noopener" href="https://music.youtube.com/search?q=Nat+King+Cole">YouTube Music</a>
+      <a class="btn" target="_blank" rel="noopener" href="https://open.spotify.com/search/Nat%20King%20Cole">Spotify</a>
+      <a class="btn" target="_blank" rel="noopener" href="https://music.apple.com/br/search?term=Nat%20King%20Cole">Apple Music</a>
+    </div>
+  </section>
+
+  <!-- ========== AJUSTES ========== -->
+  <section id="v-settings" class="view sheet" hidden>
+    <h2>Ajustes</h2>
+    <label>Nome do app</label>
+    <input id="sName">
+    <label class="check"><input type="checkbox" id="sVoice"> Avisos por voz</label>
+    <label class="check"><input type="checkbox" id="sBeep"> Bipes e vibração</label>
+    <label class="check"><input type="checkbox" id="sIntroMusic"> Tocar música na abertura</label>
+    <label>Distâncias de aviso de radar (metros)</label>
+    <input id="sAlert" placeholder="1000, 500, 200">
+    <label>Lembrete de pausa a cada (minutos ao volante)</label>
+    <input id="sFatigue" type="number" min="30" max="300" step="10">
+    <label>Avisar quando o próximo posto estiver a mais de (km)</label>
+    <input id="sFuelGap" type="number" min="10" max="300" step="5">
+    <label>Distância máx. da estrada para postos/restaurantes (metros)</label>
+    <input id="sPoiRadius" type="number" min="100" max="2000" step="50">
+    <button class="btn primary wide" id="btnSaveSettings">Salvar</button>
+    <h3>Mapa offline</h3>
+    <p class="hint">Os dados da viagem (rota, manobras, radares, postos) ficam 100% offline. As imagens do mapa ficam guardadas conforme você as visualiza — antes de sair, passe o dedo pela rota no mapa com internet para deixá-las salvas.</p>
+    <p class="hint" id="storageInfo"></p>
+    <p class="hint">Dados de mapa © colaboradores do OpenStreetMap. Rotas: OSRM. Uso pessoal.</p>
+  </section>
+
+  <nav class="tabs" id="tabs">
+    <button data-view="v-intro">🌅<span>Início</span></button>
+    <button data-view="v-plan" class="active">🗺️<span>Viagem</span></button>
+    <button data-view="v-radars">📷<span>Radares</span></button>
+    <button data-view="v-music">🎵<span>Músicas</span></button>
+    <button data-view="v-settings">⚙️<span>Ajustes</span></button>
+  </nav>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

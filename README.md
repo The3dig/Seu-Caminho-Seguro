@@ -1,1 +1,72 @@
-# Seu-Caminho-Seguro
+# Seu Caminho Seguro
+
+App pessoal de navegação para estrada, pensado para três problemas:
+
+1. **Radares que o Waze não avisa** → você tem sua própria base de radares, que vai sendo **confirmada por você** a cada viagem.
+2. **Desvios perigosos** → a rota é definida **antes** de sair e **nunca é recalculada**, nem com trânsito.
+3. **Sono sem saber onde parar** → o app mostra sempre a distância até o **próximo posto, restaurante, parada e hotel**, e avisa quando vem um trecho longo sem posto.
+
+Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Depois de preparada, a viagem funciona **sem internet**.
+
+## Funções
+
+| | |
+|---|---|
+| 🌅 **Abertura "boa viagem"** | Tela animada de pôr do sol com a sua trilha (ex.: Nat King Cole) tocando. |
+| 🗺️ **Rota fixa** | Saída, paradas obrigatórias ("passar por…") e destino. Escolha entre rotas alternativas. Aceita endereço, coordenadas ou link do Google Maps/Waze. |
+| ⬇ **Preparar offline** | Baixa do OpenStreetMap os postos, restaurantes, áreas de descanso, hotéis/motéis e radares ao longo da rota. |
+| 📷 **Radares** | Avisos por voz e bipe em 1000 m, 500 m e 200 m (ajustável), com limite de velocidade e alerta se estiver acima. |
+| ✅ **Confirmar radar** | Ao passar por um radar, o app pergunta "Tinha?" → ✅/❌. Radares negados repetidamente são desativados sozinhos. |
+| ➕ **Marcar radar** | Botão vermelho grande: marca um radar onde você está (e o sentido da via) e pergunta o limite. |
+| ⛽ **Postos na estrada** | Próximo posto/restaurante/parada com distância e tempo; destaque para os **24h**; aviso por voz "este foi o último posto pelos próximos X km". |
+| 😴 **Cansaço** | Lembrete de pausa a cada 2 h ao volante (1h30 de madrugada), já dizendo onde fica o próximo posto. Parada de 10 min zera o contador. |
+| 📷 **Modo só radar** | Para o dia a dia: sem rota, só alerta os radares da sua base à frente. |
+| 🎵 **Trilha offline** | Seus arquivos de música ficam guardados no celular; a música abaixa sozinha durante os avisos. |
+| 💾 **Backup** | Exporta/importa radares (JSON, CSV, GPX, KML — dá pra importar listas feitas no Google My Maps). |
+
+## Como colocar no celular
+
+O app é só um site estático (HTML/JS), sem servidor. O jeito mais fácil é o **GitHub Pages**:
+
+1. No GitHub, abra o repositório → **Settings → Pages**.
+2. Em *Source*, escolha **Deploy from a branch**, branch `main` (ou a branch deste app) e pasta `/ (root)`.
+3. Em ~1 min o endereço aparece (algo como `https://SEU-USUARIO.github.io/Seu-Caminho-Seguro/`).
+4. Abra no **Chrome do Android** (ou Safari no iPhone) → menu → **Adicionar à tela inicial**.
+
+> O GPS só funciona em `https://` (ou `localhost`), por isso o GitHub Pages é ideal.
+
+Para testar no computador: `python3 -m http.server 8000` na pasta do projeto e abra `http://localhost:8000`.
+
+## Antes de viajar (com internet)
+
+1. **Viagem** → digite o destino → **Traçar rota** → escolha a rota → **Preparar viagem offline**.
+2. Confira o resumo: quantos radares, postos, e os **trechos longos sem posto**.
+3. Passe o dedo pelo mapa ao longo da rota para as imagens do mapa ficarem salvas (o restante já está offline).
+4. Use **🧪 Simular** para ver o app "dirigindo sozinho" pela rota e ouvir os avisos.
+5. Na estrada: **▶ Iniciar viagem**. Deixe o celular na tomada (GPS + tela ligada gastam bateria).
+
+## Limitações honestas
+
+- **Radares do Waze/Google não podem ser importados**: eles não liberam esses dados. A base começa com os radares cadastrados no OpenStreetMap (marcados como "não confirmados") e vai ficando boa conforme você marca e confirma.
+- **As músicas não vêm com o app** (direitos autorais): adicione os seus MP3/M4A do Nat King Cole na aba 🎵. Há atalhos para abrir no YouTube Music/Spotify.
+- Postos e restaurantes vêm do OpenStreetMap: na maioria das rodovias brasileiras está bem completo, mas pode faltar algum estabelecimento ou horário.
+- Rotas: servidor público do OSRM; busca de endereços: Nominatim. Ambos gratuitos e para uso leve — perfeito para uso pessoal.
+- Se você sair da rota, o app **avisa mas não recalcula** (de propósito). Para mudar o caminho, prepare uma nova viagem.
+
+## Estrutura
+
+```
+index.html            telas
+css/style.css         visual
+js/app.js             interface e fluxo
+js/nav.js             motor de navegação (rota fixa, radares, postos, cansaço)
+js/routing.js         busca de endereço + rota (OSRM) + instruções em português
+js/pois.js            postos/restaurantes/radares via OpenStreetMap (Overpass)
+js/radars.js          base pessoal de radares + importação/exportação
+js/music.js           player offline
+js/voice.js           voz pt-BR e bipes
+js/store.js           armazenamento no celular (IndexedDB)
+sw.js                 funcionamento offline
+```
+
+Dados de mapa © colaboradores do OpenStreetMap. Uso pessoal, não comercial.
