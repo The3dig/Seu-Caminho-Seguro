@@ -715,10 +715,36 @@ async function startDrive(trip, simulate, resume = null) {
   Voice.speak(trip ? `Rota fixa carregada. ${nR === 1 ? "1 radar" : nR + " radares"} no caminho. Boa viagem!` : 'Modo alerta de radar ativado. Boa viagem!');
 }
 
+// Sem GPS = sem alerta. Nunca falhar em silêncio: avisa quando o sinal some.
+function gpsWatchdog() {
+  clearInterval(S.gpsTimer);
+  S.lastFixAt = Date.now();
+  S.gpsLost = false;
+  S.gpsTimer = setInterval(() => {
+    if (!S.nav || S.sim) return;
+    if (!S.gpsLost && Date.now() - S.lastFixAt > 20000) {
+      S.gpsLost = true;
+      Voice.beep({ times: 3, freq: 500, force: true });
+      Voice.speak('Atenção: sem sinal de GPS. Os alertas de radar estão parados até o sinal voltar.', { force: true });
+      toast('📡 Sem sinal de GPS — alertas parados até o sinal voltar. Confira se o app está aberto e a localização permitida.', 15000);
+    }
+  }, 5000);
+}
+
+function gpsOk() {
+  S.lastFixAt = Date.now();
+  if (S.gpsLost) {
+    S.gpsLost = false;
+    Voice.speak('Sinal de GPS de volta. Alertas ativos.', { force: true });
+    toast('📡 GPS de volta — alertas ativos.', 3000);
+  }
+}
+
 function startGps() {
   if (!navigator.geolocation) return toast('GPS indisponível neste aparelho.');
+  gpsWatchdog();
   S.watchId = navigator.geolocation.watchPosition(
-    (p) => S.nav?.update({
+    (p) => gpsOk() || S.nav?.update({
       lat: p.coords.latitude, lon: p.coords.longitude,
       speed: p.coords.speed, heading: p.coords.heading, accuracy: p.coords.accuracy, time: p.timestamp,
     }),
@@ -742,10 +768,24 @@ function startSim(trip) {
 }
 
 async function requestWakeLock() {
-  try { S.wakeLock = await navigator.wakeLock?.request('screen'); } catch { /* sem suporte */ }
+  try {
+    S.wakeLock = await navigator.wakeLock.request('screen');
+  } catch {
+    // Sem como travar a tela ligada: pede para o usuário ajustar o celular.
+    if (!S.warnedScreen) {
+      S.warnedScreen = true;
+      toast('⚠ Deixe a tela sempre ligada durante a viagem (iPhone: Ajustes › Tela e Brilho › Bloqueio Automático › Nunca). Com a tela apagada os alertas param.', 15000);
+    }
+  }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && S.nav) requestWakeLock();
+  if (!S.nav) return;
+  if (document.visibilityState === 'visible') {
+    requestWakeLock();
+    if (S.hiddenAt && Date.now() - S.hiddenAt > 10000) toast('⚠ Enquanto o app ficou fechado/tela apagada, os alertas ficaram parados. Mantenha o app aberto na tela.', 8000);
+  } else {
+    S.hiddenAt = Date.now();
+  }
 });
 
 function stopDrive() {
@@ -758,6 +798,7 @@ function stopDrive() {
   if (S.watchId != null) navigator.geolocation.clearWatch(S.watchId);
   if (S.sim) clearInterval(S.sim);
   S.watchId = S.sim = null;
+  clearInterval(S.gpsTimer);
   S.nav = null;
   S.wakeLock?.release?.();
   S.wakeLock = null;
@@ -1060,6 +1101,7 @@ function renderSettings() {
   $('#sRecord').checked = s.recordDrives;
   $('#sCities').checked = s.logCities;
   $('#sSpeedWarn').checked = s.speedWarn !== false;
+  $('#sInsist').checked = s.insistent !== false;
   $('#sAskStop').checked = s.askStopReason;
   $('#sAlert').value = s.alertDist.join(', ');
   $('#sFatigue').value = s.fatigueMin;
@@ -1080,6 +1122,7 @@ $('#btnSaveSettings').onclick = async () => {
   s.recordDrives = $('#sRecord').checked;
   s.logCities = $('#sCities').checked;
   s.speedWarn = $('#sSpeedWarn').checked;
+  s.insistent = $('#sInsist').checked;
   s.askStopReason = $('#sAskStop').checked;
   applyNight();
   const ad = $('#sAlert').value.split(/[,; ]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 50 && x <= 3000);

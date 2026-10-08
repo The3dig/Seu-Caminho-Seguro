@@ -22,6 +22,9 @@ export class Nav {
     this.settings = settings;
     this.ui = ui;
     this.walk = !!settings.walkTest;
+    // Modo insistente: prefere avisar demais a deixar passar uma multa.
+    this.insist = settings.insistent !== false;
+    this.radarRadius = this.insist ? 60 : RADAR_ON_ROUTE_M;
     // A pé, os avisos começam bem mais perto para dar pra testar num quarteirão.
     this.thresholds = this.walk ? [300, 150, 50] : [...settings.alertDist].sort((a, b) => b - a);
     this.line = trip ? makeLine(trip.pts.map(([lat, lon]) => ({ lat, lon }))) : null;
@@ -34,6 +37,7 @@ export class Nav {
     this.limits = trip?.speedLimits || [];
     this.overSince = 0;
     this.overWarned = false;
+    this.lastOverSpeak = 0;
     this.dropSpoken = new Set(); // reduções de limite já avisadas
     this.lastLimit = null;
     this.dropAt = null;
@@ -59,8 +63,8 @@ export class Nav {
   projectRadars(radars) {
     const out = [];
     for (const r of radars) {
-      if (!isActive(r)) continue;
-      const loc = locate(this.line, r, 0, this.line.pts.length - 1, RADAR_ON_ROUTE_M);
+      if (!isActive(r) && !this.insist) continue;
+      const loc = locate(this.line, r, 0, this.line.pts.length - 1, this.radarRadius);
       if (!loc) continue;
       // Radar com sentido conhecido: ignora se for da pista contrária.
       if (r.heading != null) {
@@ -76,7 +80,7 @@ export class Nav {
   addRadar(r) {
     this.allRadars = [...this.allRadars.filter((x) => x.id !== r.id), r];
     if (this.line) {
-      const loc = locate(this.line, r, 0, this.line.pts.length - 1, RADAR_ON_ROUTE_M);
+      const loc = locate(this.line, r, 0, this.line.pts.length - 1, this.radarRadius);
       if (loc && !this.routeRadars.some((x) => x.r.id === r.id)) {
         this.routeRadars.push({ r, along: loc.along });
         this.routeRadars.sort((a, b) => a.along - b.along);
@@ -165,6 +169,9 @@ export class Nav {
           this.ui.askConfirm(x.r);
         }
       }
+    } else if (this.insist) {
+      // Fora da rota (desvio, obra, posto): continua alertando por proximidade.
+      this.updateFree(f, kmh, state);
     }
 
     // Manobras
@@ -212,9 +219,9 @@ export class Nav {
         state.limitDrop = { limit: next[2], d };
         if (warnOn && !this.dropSpoken.has(next[0]) && !state.radar) {
           this.dropSpoken.add(next[0]);
-          if (kmh > next[2] + 3) {
-            beep({ times: 2, freq: 900, dur: 0.12 });
-            speak(`Atenção: o limite cai para ${next[2]} em ${sayDist(d)}.`);
+          if (this.insist || kmh > next[2] + 3) {
+            beep({ times: 2, freq: 900, dur: 0.12, force: this.insist });
+            speak(`Atenção: o limite cai para ${next[2]} em ${sayDist(d)}.`, { force: this.insist });
           }
         }
       }
@@ -227,10 +234,13 @@ export class Nav {
       // no resto, só depois de 4 s acima (sem ficar repetindo).
       const justDropped = this.dropAt != null && p - this.dropAt < 400;
       const waited = Date.now() - this.overSince > 4000;
-      if (!this.overWarned && (justDropped || waited) && warnOn && !state.radar) {
+      // No modo insistente, repete a cada 15 s enquanto continuar acima.
+      const again = this.insist && this.overWarned && Date.now() - this.lastOverSpeak > 15000;
+      if (((!this.overWarned && (justDropped || waited)) || again) && warnOn && !state.radar) {
         this.overWarned = true;
-        beep({ times: justDropped ? 2 : 1, freq: 1200, dur: 0.12 });
-        speak(justDropped ? `Reduza! Limite ${roadLimit}.` : `Limite ${roadLimit}.`, { urgent: justDropped });
+        this.lastOverSpeak = Date.now();
+        beep({ times: justDropped ? 2 : 1, freq: 1200, dur: 0.12, force: this.insist });
+        speak(justDropped ? `Reduza! Limite ${roadLimit}.` : `Limite ${roadLimit}.`, { urgent: justDropped, force: this.insist });
       }
     } else if (!roadLimit || kmh < roadLimit + 2) {
       this.overSince = 0;
@@ -263,12 +273,15 @@ export class Nav {
         this.spoken.set(r.id, t);
         const lim = limit ? `, limite ${limit}` : '';
         const isLast = t === this.thresholds[this.thresholds.length - 1];
+        // Radar que você já negou continua avisando (pode ter voltado ou ser móvel).
+        const word = isActive(r) ? 'Radar' : 'Possível radar';
+        const force = this.insist;
         if (isLast) {
-          beep({ times: 3, freq: 1000 });
-          speak(`Radar${lim}!`, { urgent: true });
+          beep({ times: 3, freq: 1000, force });
+          speak(`${word}${lim}!`, { urgent: true, force });
         } else {
-          beep({ times: 2 });
-          speak(`Radar em ${sayDist(d)}${lim}.`, { urgent: true });
+          beep({ times: 2, force });
+          speak(`${word} em ${sayDist(d)}${lim}.`, { urgent: true, force });
         }
       }
     }
@@ -276,8 +289,8 @@ export class Nav {
       const now = Date.now();
       if (now - this.lastOverBeep > 4000) {
         this.lastOverBeep = now;
-        beep({ times: 2, freq: 1400, dur: 0.1, gap: 0.05 });
-        if (d > 150) speak('Reduza a velocidade!', { urgent: true });
+        beep({ times: 2, freq: 1400, dur: 0.1, gap: 0.05, force: this.insist });
+        if (d > 150) speak('Reduza a velocidade!', { urgent: true, force: this.insist });
       }
     }
   }
@@ -331,14 +344,16 @@ export class Nav {
     if (f.heading == null || kmh < (this.walk ? 1.5 : 8)) return;
     let best = null;
     for (const r of this.allRadars) {
-      if (!isActive(r)) continue;
+      if (!isActive(r) && !this.insist) continue;
       const d = dist(f, r);
       if (d > 1300) {
         this.freeNear.delete(r.id);
         continue;
       }
-      if (r.heading != null && angleDiff(r.heading, f.heading) > 60) continue;
-      const ahead = angleDiff(bearing(f, r), f.heading) < (this.walk ? 50 : 35) || d < 40;
+      if (r.heading != null && angleDiff(r.heading, f.heading) > (this.insist ? 75 : 60)) continue;
+      // Cone "à frente" mais aberto no modo insistente (curvas, GPS impreciso).
+      const cone = this.walk ? 50 : this.insist ? (d < 300 ? 70 : 45) : 35;
+      const ahead = angleDiff(bearing(f, r), f.heading) < cone || d < 40;
       const prevMin = this.freeNear.get(r.id);
       if (ahead) {
         this.freeNear.set(r.id, Math.min(prevMin ?? d, d));

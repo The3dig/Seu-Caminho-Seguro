@@ -29,8 +29,9 @@ export function unlock() {
   }
 }
 
-export function speak(text, { urgent = false } = {}) {
-  if (!settings.voice || !('speechSynthesis' in window)) return;
+// force: fala mesmo com a voz desligada (radar e limite no modo insistente).
+export function speak(text, { urgent = false, force = false } = {}) {
+  if ((!settings.voice && !force) || !('speechSynthesis' in window)) return;
   if (urgent) speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'pt-BR';
@@ -41,8 +42,8 @@ export function speak(text, { urgent = false } = {}) {
   speechSynthesis.speak(u);
 }
 
-export function beep({ times = 2, freq = 880, dur = 0.16, gap = 0.1 } = {}) {
-  if (!settings.beep || !audioCtx) return;
+export function beep({ times = 2, freq = 880, dur = 0.16, gap = 0.1, force = false } = {}) {
+  if ((!settings.beep && !force) || !audioCtx) return;
   const t0 = audioCtx.currentTime;
   for (let i = 0; i < times; i++) {
     const o = audioCtx.createOscillator();
