@@ -343,6 +343,14 @@
     <input id="sName">
     <label class="check"><input type="checkbox" id="sInsist"> 🔔 Modo insistente (recomendado)</label>
     <p class="hint">Radar e limite <b>sempre</b> falam, mesmo com a voz desligada; repete enquanto você estiver acima do limite; avisa até radares que você negou (“possível radar”) e continua alertando fora da rota.</p>
+    <label>Voz dos avisos</label>
+    <div class="row">
+      <select id="sVoiceName"></select>
+      <button class="btn" id="btnTestVoice">🔊 Testar</button>
+    </div>
+    <label>Velocidade da fala: <span id="sRateVal"></span></label>
+    <input id="sVoiceRate" type="range" min="0.8" max="1.4" step="0.05">
+    <p class="hint" id="voiceTip"></p>
     <label class="check"><input type="checkbox" id="sVoice"> Voz para manobras e paradas</label>
     <label class="check"><input type="checkbox" id="sBeep"> Bipes e vibração</label>
     <label class="check"><input type="checkbox" id="sIntroMusic"> Tocar música na abertura</label>

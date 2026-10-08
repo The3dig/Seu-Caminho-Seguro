@@ -264,3 +264,4 @@ body.night .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(
 .limit-next { position: absolute; top: -26px; left: -6px; background: var(--gold); color: #2b1a00; font-weight: 800; font-size: 12px;
   border-radius: 999px; padding: 3px 8px; white-space: nowrap; box-shadow: 0 2px 6px #0009; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { transform: scale(1.08); } }
+input[type=range] { padding: 0; height: 32px; background: none; border: 0; accent-color: var(--accent); }

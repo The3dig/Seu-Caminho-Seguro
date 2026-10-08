@@ -15,6 +15,7 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | 🌅 **Abertura "boa viagem"** | Tela animada de pôr do sol com a sua trilha (ex.: Nat King Cole) tocando. |
 | 🗺️ **Rota fixa** | Saída, paradas obrigatórias ("passar por…") e destino. Escolha entre rotas alternativas. Aceita endereço, coordenadas ou link do Google Maps/Waze. |
 | ⬇ **Preparar offline** | Baixa do OpenStreetMap os postos, restaurantes, áreas de descanso, hotéis/motéis e radares ao longo da rota. |
+| 🗣️ **Voz** | Usa a voz do próprio celular (offline). Em Ajustes: escolher a voz, velocidade da fala e 🔊 Testar. No iPhone dá pra baixar vozes “Aprimoradas” em Ajustes › Acessibilidade › Conteúdo Falado › Vozes. |
 | 🔔 **Modo insistente** (padrão) | Filosofia: melhor avisar demais do que levar multa. Radar e limite **sempre** falam (mesmo com a voz desligada), o aviso de limite repete a cada 15 s enquanto você estiver acima, radares que você negou continuam avisando como “possível radar”, os alertas seguem mesmo fora da rota e o app avisa quando fica sem GPS ou com a tela apagada. |
 | 📷 **Radares** | Avisos por voz e bipe em 1000 m, 500 m e 200 m (ajustável), com limite de velocidade e alerta se estiver acima. |
 | ✅ **Confirmar radar** | Ao passar por um radar, o app pergunta "Tinha?" → ✅/❌. Radares negados repetidamente são desativados sozinhos. |

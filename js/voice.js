@@ -4,16 +4,28 @@ let audioCtx = null;
 let duckHandler = { duck() {}, unduck() {} };
 let ptVoice = null;
 
-export function configure(s) { settings = s; }
+export function configure(s) { settings = s; pickVoice(); }
 export function setDucking(h) { duckHandler = h; }
+export const currentVoice = () => ptVoice?.name || '';
+
+// Vozes em português disponíveis no aparelho; as do Brasil e as "aprimoradas"
+// (melhor qualidade) primeiro.
+export function voices() {
+  if (!('speechSynthesis' in window)) return [];
+  const score = (v) => (v.lang === 'pt-BR' || v.lang === 'pt_BR' ? 0 : 2) + (/enhanced|aprimorad|premium|neural|natural/i.test(v.name) ? 0 : 1);
+  return speechSynthesis.getVoices()
+    .filter((v) => /^pt/i.test(v.lang))
+    .sort((a, b) => score(a) - score(b) || a.name.localeCompare(b.name));
+}
 
 function pickVoice() {
-  const voices = speechSynthesis.getVoices();
-  ptVoice = voices.find((v) => v.lang === 'pt-BR') || voices.find((v) => v.lang?.startsWith('pt')) || null;
+  if (!('speechSynthesis' in window)) return;
+  const list = voices();
+  ptVoice = (settings.voiceName && list.find((v) => v.name === settings.voiceName)) || list[0] || null;
 }
 if ('speechSynthesis' in window) {
   pickVoice();
-  speechSynthesis.onvoiceschanged = pickVoice;
+  speechSynthesis.addEventListener?.('voiceschanged', pickVoice);
 }
 
 // Precisa ser chamado a partir de um toque do usuário (política dos navegadores).
@@ -35,8 +47,9 @@ export function speak(text, { urgent = false, force = false } = {}) {
   if (urgent) speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'pt-BR';
-  if (ptVoice) u.voice = ptVoice;
-  u.rate = 1.05;
+  // Uma voz inválida nunca pode impedir um alerta: cai para a voz padrão.
+  try { if (ptVoice) u.voice = ptVoice; } catch { /* voz padrão */ }
+  u.rate = settings.voiceRate || 1.05;
   duckHandler.duck();
   u.onend = u.onerror = () => { if (!speechSynthesis.pending) duckHandler.unduck(); };
   speechSynthesis.speak(u);

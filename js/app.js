@@ -1102,6 +1102,9 @@ function renderSettings() {
   $('#sCities').checked = s.logCities;
   $('#sSpeedWarn').checked = s.speedWarn !== false;
   $('#sInsist').checked = s.insistent !== false;
+  renderVoices();
+  $('#sVoiceRate').value = s.voiceRate || 1.05;
+  $('#sRateVal').textContent = `${Number($('#sVoiceRate').value).toFixed(2).replace('.', ',')}×`;
   $('#sAskStop').checked = s.askStopReason;
   $('#sAlert').value = s.alertDist.join(', ');
   $('#sFatigue').value = s.fatigueMin;
@@ -1123,6 +1126,8 @@ $('#btnSaveSettings').onclick = async () => {
   s.logCities = $('#sCities').checked;
   s.speedWarn = $('#sSpeedWarn').checked;
   s.insistent = $('#sInsist').checked;
+  s.voiceName = $('#sVoiceName').value;
+  s.voiceRate = parseFloat($('#sVoiceRate').value) || 1.05;
   s.askStopReason = $('#sAskStop').checked;
   applyNight();
   const ad = $('#sAlert').value.split(/[,; ]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 50 && x <= 3000);
@@ -1899,6 +1904,30 @@ async function checkResume() {
     await Places.active.clear();
   };
 }
+
+// ================= Escolha de voz =================
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function renderVoices() {
+  const list = Voice.voices();
+  const sel = $('#sVoiceName');
+  sel.innerHTML = list.length
+    ? list.map((v) => `<option value="${esc(v.name)}">${esc(v.name)}${v.lang.replace('_', '-') === 'pt-BR' ? '' : ` (${esc(v.lang)})`}</option>`).join('')
+    : '<option value="">Voz padrão do aparelho</option>';
+  if (S.settings.voiceName && list.some((v) => v.name === S.settings.voiceName)) sel.value = S.settings.voiceName;
+  $('#voiceTip').innerHTML = isIOS
+    ? 'Quer uma voz mais nítida? No iPhone: <b>Ajustes › Acessibilidade › Conteúdo Falado › Vozes › Português (Brasil)</b> e baixe uma voz <b>“Aprimorada”</b> ou <b>“Premium”</b>. Depois feche e abra o app e escolha aqui.'
+    : 'Mais vozes: Configurações do Android › Acessibilidade (ou Idioma) › Conversão de texto em voz › Mecanismo do Google › Instalar dados de voz › Português (Brasil).';
+}
+if ('speechSynthesis' in window) speechSynthesis.addEventListener?.('voiceschanged', () => { if (!$('#v-settings').hidden) renderVoices(); });
+$('#sVoiceRate').oninput = () => { $('#sRateVal').textContent = `${Number($('#sVoiceRate').value).toFixed(2).replace('.', ',')}×`; };
+$('#btnTestVoice').onclick = () => {
+  Voice.unlock();
+  // Testa com a voz e a velocidade escolhidas, mesmo antes de salvar.
+  Voice.configure({ ...S.settings, voiceName: $('#sVoiceName').value, voiceRate: parseFloat($('#sVoiceRate').value) });
+  Voice.beep({ times: 2, force: true });
+  Voice.speak('Radar em 500 metros, limite 80. Atenção: o limite cai para 60 em 700 metros.', { urgent: true, force: true });
+  setTimeout(() => Voice.configure(S.settings), 500);
+};
 
 // ================= Início =================
 async function init() {
