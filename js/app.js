@@ -883,7 +883,21 @@ async function startDrive(trip, simulate, resume = null) {
   else startGps();
   const nR = S.nav.routeRadars.length;
   if (resume) return Voice.speak('Viagem retomada. A rota continua a mesma.');
-  Voice.speak(trip ? `Rota fixa carregada. ${nR === 1 ? "1 radar" : nR + " radares"} no caminho. Boa viagem!` : 'Modo alerta de radar ativado. Boa viagem!');
+  Voice.speak(trip ? departureSpeech(trip, nR) : 'Modo alerta de radar ativado. Boa viagem!', { force: true });
+}
+
+// "Saindo agora para Casa. São 6 quilômetros, chegada prevista às 18 e 45…"
+function departureSpeech(trip, nR) {
+  const dest = trip.places?.length ? trip.places[trip.places.length - 1].label : (trip.name.split('→')[1] || trip.name);
+  const name = dest.replace(/^[^\p{L}\d]+/u, '').split(',')[0].trim(); // tira emoji (🏠) e o resto do endereço
+  const km = trip.distance / 1000;
+  const dist = km < 1 ? `${Math.round(trip.distance / 50) * 50} metros` : `${km < 10 ? Math.round(km) || 1 : Math.round(km)} quilômetro${Math.round(km) === 1 ? '' : 's'}`;
+  const eta = new Date(Date.now() + trip.duration * 1000);
+  const h = eta.getHours(), m = eta.getMinutes();
+  const when = m === 0 ? `às ${h} horas` : `às ${h} e ${m}`;
+  const radars = nR ? ` ${nR === 1 ? 'Um radar' : `${nR} radares`} no caminho.` : ' Nenhum radar conhecido no caminho.';
+  const stops = trip.plan?.days?.length > 1 ? ` A viagem tem ${trip.plan.days.length} dias.` : '';
+  return `Saindo agora para ${name}. São ${dist}, chegada prevista ${when}.${radars}${stops} Rota fixa, sem desvios. Boa viagem!`;
 }
 
 // Sem GPS = sem alerta. Nunca falhar em silêncio: avisa quando o sinal some.
