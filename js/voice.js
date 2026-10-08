@@ -9,10 +9,12 @@ export function setDucking(h) { duckHandler = h; }
 export const currentVoice = () => ptVoice?.name || '';
 
 // Vozes em português disponíveis no aparelho; as do Brasil e as "aprimoradas"
-// (melhor qualidade) primeiro.
+// (melhor qualidade) primeiro. O iPhone usa "pt-BR", outros "pt_BR".
+export const isBR = (v) => /^pt[-_]br$/i.test(v.lang || '');
 export function voices() {
   if (!('speechSynthesis' in window)) return [];
-  const score = (v) => (v.lang === 'pt-BR' || v.lang === 'pt_BR' ? 0 : 2) + (/enhanced|aprimorad|premium|neural|natural/i.test(v.name) ? 0 : 1);
+  // Brasil primeiro; depois as de melhor qualidade; a Luciana (padrão do iPhone) na frente.
+  const score = (v) => (isBR(v) ? 0 : 4) + (/enhanced|aprimorad|premium|neural|natural/i.test(v.name) ? 0 : 2) + (/luciana/i.test(v.name) ? 0 : 1);
   return speechSynthesis.getVoices()
     .filter((v) => /^pt/i.test(v.lang))
     .sort((a, b) => score(a) - score(b) || a.name.localeCompare(b.name));
@@ -21,11 +23,16 @@ export function voices() {
 function pickVoice() {
   if (!('speechSynthesis' in window)) return;
   const list = voices();
-  ptVoice = (settings.voiceName && list.find((v) => v.name === settings.voiceName)) || list[0] || null;
+  const chosen = settings.voiceName && list.find((v) => v.name === settings.voiceName);
+  // Voz de Portugal só se você escolher; no automático, sempre a do Brasil.
+  ptVoice = chosen || list.find(isBR) || null;
 }
 if ('speechSynthesis' in window) {
   pickVoice();
   speechSynthesis.addEventListener?.('voiceschanged', pickVoice);
+  // O Safari do iPhone às vezes demora para listar as vozes (e nem avisa).
+  let tries = 0;
+  const retry = setInterval(() => { pickVoice(); if (ptVoice || ++tries > 20) clearInterval(retry); }, 500);
 }
 
 // Precisa ser chamado a partir de um toque do usuário (política dos navegadores).
@@ -42,11 +49,18 @@ export function unlock() {
 }
 
 // force: fala mesmo com a voz desligada (radar e limite no modo insistente).
-export function speak(text, { urgent = false, force = false } = {}) {
+export function speak(text, { urgent = false, force = false, tries = 0 } = {}) {
   if ((!settings.voice && !force) || !('speechSynthesis' in window)) return;
+  // Vozes ainda não carregaram (iPhone)? Espera um pouco para não sair com
+  // sotaque de Portugal. Alerta urgente (radar) fala na hora mesmo assim.
+  if (!ptVoice) pickVoice();
+  if (!ptVoice && !urgent && tries < 4 && !voices().length) {
+    setTimeout(() => speak(text, { urgent, force, tries: tries + 1 }), 750);
+    return;
+  }
   if (urgent) speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'pt-BR';
+  u.lang = ptVoice?.lang?.replace('_', '-') || 'pt-BR';
   // Uma voz inválida nunca pode impedir um alerta: cai para a voz padrão.
   try { if (ptVoice) u.voice = ptVoice; } catch { /* voz padrão */ }
   u.rate = settings.voiceRate || 1.05;

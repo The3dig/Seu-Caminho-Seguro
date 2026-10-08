@@ -2281,9 +2281,10 @@ function renderVoices() {
   const list = Voice.voices();
   const sel = $('#sVoiceName');
   sel.innerHTML = list.length
-    ? list.map((v) => `<option value="${esc(v.name)}">${esc(v.name)}${v.lang.replace('_', '-') === 'pt-BR' ? '' : ` (${esc(v.lang)})`}</option>`).join('')
+    ? list.map((v) => `<option value="${esc(v.name)}">${esc(v.name)}${Voice.isBR(v) ? ' (Brasil)' : /pt[-_]pt/i.test(v.lang) ? ' (Portugal)' : ` (${esc(v.lang)})`}</option>`).join('')
     : '<option value="">Voz padrão do aparelho</option>';
   if (S.settings.voiceName && list.some((v) => v.name === S.settings.voiceName)) sel.value = S.settings.voiceName;
+  else if (list.find(Voice.isBR)) sel.value = list.find(Voice.isBR).name;
   $('#voiceTip').innerHTML = isIOS
     ? 'Quer uma voz mais nítida? No iPhone: <b>Ajustes › Acessibilidade › Conteúdo Falado › Vozes › Português (Brasil)</b> e baixe uma voz <b>“Aprimorada”</b> ou <b>“Premium”</b>. Depois feche e abra o app e escolha aqui.'
     : 'Mais vozes: Configurações do Android › Acessibilidade (ou Idioma) › Conversão de texto em voz › Mecanismo do Google › Instalar dados de voz › Português (Brasil).';
