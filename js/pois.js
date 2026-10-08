@@ -1,6 +1,6 @@
 // Busca no OpenStreetMap (Overpass) postos, restaurantes, paradas, hotéis e
 // radares ao longo da rota. Tudo é salvo junto com a viagem para uso offline.
-import { simplify, locate } from './geo.js';
+import { simplify, locate, pointAt, projSeg, bearing, angleDiff } from './geo.js';
 
 const OVERPASS = [
   'https://overpass-api.de/api/interpreter',
@@ -187,4 +187,88 @@ out;`);
     heading: parseFloat(el.tags?.direction) >= 0 ? parseFloat(el.tags.direction) : null,
     osmId: 'node' + el.id,
   }));
+}
+
+// ---------- Limite de velocidade da via ----------
+// Baixa as vias da rota que têm "maxspeed" no OpenStreetMap e associa cada
+// trecho da rota (a cada 100 m) à via mais próxima no mesmo sentido.
+// Resultado compacto: [[deMetro, ateMetro, limite], ...].
+function parseLimit(v) {
+  const m = String(v || '').match(/^(\d{2,3})(\s*km\/h)?$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+export async function fetchSpeedLimits(line, onProgress = () => {}) {
+  const simple = simplify(line.pts, 15);
+  const CHUNK = 120;
+  const ways = [];
+  const seen = new Set();
+  const chunks = [];
+  for (let i = 0; i < simple.length - 1; i += CHUNK - 1) chunks.push(simple.slice(i, i + CHUNK));
+  for (let c = 0; c < chunks.length; c++) {
+    const coordStr = chunks[c].map((p) => `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`).join(',');
+    const els = await overpass(`[out:json][timeout:90];
+way(around:20,${coordStr})["highway"]["maxspeed"];
+out tags geom;`);
+    for (const el of els) {
+      if (seen.has(el.id) || !el.geometry) continue;
+      seen.add(el.id);
+      const limit = parseLimit(el.tags.maxspeed);
+      if (limit) ways.push({ limit, pts: el.geometry.map((g) => ({ lat: g.lat, lon: g.lon })) });
+    }
+    onProgress((c + 1) / chunks.length);
+  }
+  return matchLimits(line, ways);
+}
+
+export function matchLimits(line, ways) {
+  // Índice espacial simples: células de ~500 m.
+  const CELL = 0.005;
+  const grid = new Map();
+  const key = (lat, lon) => `${Math.floor(lat / CELL)}:${Math.floor(lon / CELL)}`;
+  const addCell = (k, seg) => { if (!grid.has(k)) grid.set(k, []); grid.get(k).push(seg); };
+  for (const w of ways) {
+    for (let i = 0; i < w.pts.length - 1; i++) {
+      const a = w.pts[i], b = w.pts[i + 1];
+      const seg = { a, b, limit: w.limit, brg: bearing(a, b) };
+      const n = Math.max(1, Math.ceil(Math.hypot(b.lat - a.lat, b.lon - a.lon) / (CELL / 2)));
+      const cells = new Set();
+      for (let j = 0; j <= n; j++) cells.add(key(a.lat + (b.lat - a.lat) * j / n, a.lon + (b.lon - a.lon) * j / n));
+      for (const k of cells) addCell(k, seg);
+    }
+  }
+  const STEP = 100;
+  const out = [];
+  for (let along = 0; along < line.length; along += STEP) {
+    const p = pointAt(line, along);
+    const cy = Math.floor(p.lat / CELL), cx = Math.floor(p.lon / CELL);
+    let best = null, bd = 20;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (const seg of grid.get(`${cy + dy}:${cx + dx}`) || []) {
+          const diff = angleDiff(seg.brg, p.heading);
+          if (diff > 35 && diff < 145) continue; // via cruzando (viaduto, cruzamento)
+          const d = projSeg(p, seg.a, seg.b).d;
+          if (d < bd) { bd = d; best = seg; }
+        }
+      }
+    }
+    const lim = best ? best.limit : null;
+    const last = out[out.length - 1];
+    if (last && last[2] === lim && last[1] === along) last[1] = along + STEP;
+    else if (lim) out.push([along, along + STEP, lim]);
+  }
+  return out;
+}
+
+export function limitAt(limits, along) {
+  let lo = 0, hi = (limits?.length || 0) - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const [a, b, v] = limits[mid];
+    if (along < a) hi = mid - 1;
+    else if (along >= b) lo = mid + 1;
+    else return v;
+  }
+  return null;
 }

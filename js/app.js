@@ -1,6 +1,6 @@
-import { getSettings, saveSettings, listTrips, saveTrip, loadTrip, deleteTrip, uid } from './store.js';
+import { getSettings, saveSettings, listTrips, saveTrip, loadTrip, deleteTrip, uid, kv } from './store.js';
 import { geocode, route, cityAt } from './routing.js';
-import { fetchAlongRoute, fuelGaps, CATEGORIES, lodgingNear, radarsNear } from './pois.js';
+import { fetchAlongRoute, fuelGaps, CATEGORIES, lodgingNear, radarsNear, fetchSpeedLimits } from './pois.js';
 import { buildPlan, DEFAULT_PREFS, money } from './planner.js';
 import { makeLine, locate, pointAt, fmtDist, fmtDur, fmtClock } from './geo.js';
 import * as Radars from './radars.js';
@@ -542,9 +542,10 @@ $('#btnPrepare').onclick = async () => {
   };
   try {
     const line = makeLine(sel.pts.map(([lat, lon]) => ({ lat, lon })));
-    const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => { bar.firstElementChild.style.width = `${Math.round(f * 100)}%`; });
+    const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => { bar.firstElementChild.style.width = `${Math.round(f * 70)}%`; });
     trip.pois = pois;
     trip.poisOk = true;
+    await loadLimits(trip, line, (f) => { bar.firstElementChild.style.width = `${70 + Math.round(f * 30)}%`; });
     const added = await Radars.mergeOSM(radars);
     if (added) toast(`📷 ${added === 1 ? '1 radar do mapa adicionado' : added + ' radares do mapa adicionados'} à sua base (como “não confirmado”).`, 7000);
   } catch (e) {
@@ -583,7 +584,7 @@ async function renderSummary(trip) {
   const nRadar = await routeRadarCount(trip);
   const fuels = pois.filter((p) => p.cat === 'fuel');
   const night = pois.filter((p) => (p.cat === 'fuel' || p.cat === 'food') && p.h24);
-  const listItems = (arr) => arr.map((p) => `<li><span>${CATEGORIES[p.cat].icon}</span><div class="grow"><div class="title">${esc(p.name)}${p.h24 ? '<span class="tag h24">24h</span>' : ''}</div><div class="sub">km ${(p.along / 1000).toFixed(0)} · ${p.offset} m da pista</div></div></li>`).join('');
+  const listItems = (arr) => arr.map((p) => `<li data-pi="${pois.indexOf(p)}"><span>${CATEGORIES[p.cat].icon}</span><div class="grow"><div class="title">${esc(p.name)}${p.h24 ? '<span class="tag h24">24h</span>' : ''}</div><div class="sub">km ${(p.along / 1000).toFixed(0)} · ${p.offset} m da pista</div></div></li>`).join('');
   $('#tripSummary').innerHTML = `
     <div class="summary">
       <h3 style="margin-top:0">${esc(trip.name)}</h3>
@@ -609,10 +610,20 @@ async function renderSummary(trip) {
       <details><summary>🍽️ Restaurantes (${count('food')})</summary><ul class="list">${listItems(pois.filter((p) => p.cat === 'food'))}</ul></details>
       <details><summary>🛏️ Paradas e hotéis (${count('rest') + count('lodging')})</summary><ul class="list">${listItems(pois.filter((p) => p.cat === 'rest' || p.cat === 'lodging'))}</ul></details>
     </div>`;
+  for (const li of $('#tripSummary').querySelectorAll('li[data-pi]')) li.onclick = () => openPoi(pois[+li.dataset.pi], trip);
   $('#btnStart').onclick = () => startDrive(trip, false);
   $('#btnSim').onclick = () => startDrive(trip, true);
   $('#btnRefresh').onclick = () => refreshTrip(trip);
   if (trip.plan) $('#btnSeePlan').onclick = () => { show('v-trip'); renderPlan(trip); };
+}
+
+// Limites de velocidade da via: se falhar, a viagem segue sem eles.
+async function loadLimits(trip, line, onProgress) {
+  try {
+    trip.speedLimits = await fetchSpeedLimits(line, onProgress);
+  } catch {
+    trip.speedLimits = trip.speedLimits || [];
+  }
 }
 
 async function refreshTrip(trip) {
@@ -622,6 +633,7 @@ async function refreshTrip(trip) {
     const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius);
     trip.pois = pois;
     trip.poisOk = true;
+    await loadLimits(trip, line);
     await saveTrip(trip);
     const added = await Radars.mergeOSM(radars);
     toast(`Atualizado: ${pois.length} pontos na rota, ${added} radares novos.`);
@@ -777,7 +789,9 @@ function render(st) {
   }
   // velocidade
   $('#spd').textContent = Math.round(st.kmh);
-  $('#speedBox').classList.toggle('over', !!st.radar?.over);
+  $('#speedBox').classList.toggle('over', !!(st.radar?.over || st.overRoad));
+  $('#limitSign').hidden = !st.roadLimit;
+  if (st.roadLimit) $('#limitVal').textContent = st.roadLimit;
   // posição
   const rot = f.heading != null && st.kmh > 3;
   const html = rot ? `<div class="me-arrow" style="transform:rotate(${f.heading}deg)"></div>` : '<div class="me"></div>';
@@ -793,7 +807,7 @@ function render(st) {
     ra.hidden = false;
     ra.classList.toggle('over', !!st.radar.over);
     $('#raDist').textContent = fmtDist(st.radar.d);
-    $('#raLimit').textContent = st.radar.r.limit || '!';
+    $('#raLimit').textContent = st.radar.limit || '!';
   } else ra.hidden = true;
 
   if (!S.nav?.trip) return;
@@ -816,10 +830,12 @@ function render(st) {
   $('#etaRem').textContent = `${fmtDist(st.remaining)} · ${fmtDur(st.remainingSec)}`;
   // postos e paradas
   const cards = [];
+  S.cardPois = [];
   if (st.planned) {
     const pl = st.planned;
     const ic = pl.kind === 'pernoite' ? '🛏️' : pl.kind === 'almoço' || pl.kind === 'jantar' ? '🍽️' : '☕';
-    cards.push(`<div class="poi far"><div class="k">${ic} Parada planejada</div><div class="v">${fmtDist(pl.d)}</div><div class="n">${esc(pl.name)} · ${fmtDur(pl.sec)}</div></div>`);
+    const opt = pl.optional ? `<div class="n" style="color:var(--gold)">opcional · você parou ${pl.agoMin ? `há ${pl.agoMin} min` : 'há pouco'}</div>` : '';
+    cards.push(`<div class="poi ${pl.optional ? 'optional' : 'far'}"><div class="k">${ic} Parada planejada</div><div class="v">${fmtDist(pl.d)}</div><div class="n">${esc(pl.name)} · ${fmtDur(pl.sec)}</div>${opt}</div>`);
   }
   const nf = st.next.fuel;
   if (nf[0]) {
@@ -834,7 +850,8 @@ function render(st) {
 }
 
 function card(k, p, extra = '', far = false) {
-  return `<div class="poi ${far ? 'far' : ''}"><div class="k">${k}</div><div class="v">${fmtDist(p.d)}</div>
+  S.cardPois.push(p);
+  return `<div class="poi ${far ? 'far' : ''}" data-i="${S.cardPois.length - 1}"><div class="k">${k}</div><div class="v">${fmtDist(p.d)}</div>
     <div class="n">${esc(p.name)}${p.h24 ? ' · 24h' : ''} · ${fmtDur(p.sec)}</div>${extra ? `<div class="n" style="color:var(--gold)">${extra}</div>` : ''}</div>`;
 }
 
@@ -1040,6 +1057,7 @@ function renderSettings() {
   $('#sNight').value = s.nightMap;
   $('#sRecord').checked = s.recordDrives;
   $('#sCities').checked = s.logCities;
+  $('#sSpeedWarn').checked = s.speedWarn !== false;
   $('#sAskStop').checked = s.askStopReason;
   $('#sAlert').value = s.alertDist.join(', ');
   $('#sFatigue').value = s.fatigueMin;
@@ -1059,6 +1077,7 @@ $('#btnSaveSettings').onclick = async () => {
   s.nightMap = $('#sNight').value;
   s.recordDrives = $('#sRecord').checked;
   s.logCities = $('#sCities').checked;
+  s.speedWarn = $('#sSpeedWarn').checked;
   s.askStopReason = $('#sAskStop').checked;
   applyNight();
   const ad = $('#sAlert').value.split(/[,; ]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 50 && x <= 3000);
@@ -1150,6 +1169,8 @@ $('#tpBuild').onclick = async () => {
       trip.pois = pois;
       trip.poisOk = true;
       await Radars.mergeOSM(radars);
+      status('🚦 Baixando limites de velocidade das vias…');
+      await loadLimits(trip, line, (f) => status(`🚦 Baixando limites de velocidade… ${Math.round(f * 100)}%`));
     } catch (e) {
       trip.poisOk = false;
       toast('⚠ Não consegui baixar os postos agora. O roteiro sai sem sugestões de parada.', 8000);
@@ -1395,7 +1416,7 @@ async function renderPlaces() {
     return `<li data-i="${i}">
       <div class="grow"><div class="title">${esc(d.name)}</div>
       <div class="sub">${dt.toLocaleDateString('pt-BR')} ${fmtClock(dt)} · ${fmtDist(d.distance)} · ${fmtDur(d.movingSec)} · máx ${Math.round(d.maxKmh)} km/h${d.radars ? ` · ${d.radars} radar${d.radars > 1 ? 'es' : ''}` : ''}${d.stops ? ` · ${d.stops} parada${d.stops > 1 ? 's' : ''}` : ''}</div></div>
-      <button class="btn" data-a="map">🗺</button><button class="btn" data-a="del">🗑</button>
+      <button class="btn" data-a="map">🗺</button><button class="btn" data-a="gpx" title="Exportar trajeto (GPX)">📤</button><button class="btn" data-a="del">🗑</button>
     </li>`;
   }).join('') : '<p class="hint">Suas viagens aparecem aqui com o trajeto percorrido (dá pra desligar em Ajustes).</p>';
   for (const li of dl.querySelectorAll('li')) {
@@ -1420,6 +1441,7 @@ async function renderPlaces() {
       toast(`${d.name} · ${fmtDist(d.distance)} — toque aqui para voltar à lista`, 30000);
       $('#toast').onclick = () => { $('#toast').hidden = true; $('#toast').onclick = () => { $('#toast').hidden = true; }; show('v-places'); };
     };
+    li.querySelector('[data-a=gpx]').onclick = () => exportDriveGpx(d.id);
     li.querySelector('[data-a=del]').onclick = async () => {
       if (!confirm('Apagar esta viagem do histórico?')) return;
       await Places.removeDrive(d.id);
@@ -1696,6 +1718,110 @@ Cities.onChange(() => {
   if (!$('#v-places').hidden) renderCityCard();
   if (!$('#v-cities').hidden) renderCityReport();
 });
+
+// ================= Detalhes de posto / restaurante / parada =================
+let pdPoi = null;
+function openPoi(p, trip = S.nav?.trip) {
+  if (!p) return;
+  pdPoi = p;
+  const c = CATEGORIES[p.cat] || { icon: '📍', label: '' };
+  $('#pdTitle').textContent = `${c.icon} ${p.name}`;
+  const lines = [`<div class="pd-line">${c.label}${p.brand && p.brand !== p.name ? ' · ' + esc(p.brand) : ''}</div>`];
+  if (p.d != null) lines.push(`<div class="pd-line">📏 ${fmtDist(p.d)} à frente · ~${fmtDur(p.sec)}</div>`);
+  else if (p.along != null) lines.push(`<div class="pd-line">📏 km ${Math.round(p.along / 1000)} da rota${trip ? ` (de ${Math.round(trip.distance / 1000)} km)` : ''}</div>`);
+  if (p.offset != null) lines.push(`<div class="pd-line">↔ ${p.offset} m da pista</div>`);
+  lines.push(`<div class="pd-line">🕘 ${p.h24 ? '<span class="tag h24">Aberto 24h</span>' : p.hours ? esc(p.hours) : 'Horário não informado no mapa'}</div>`);
+  if (p.phone) lines.push(`<div class="pd-line">📞 ${esc(p.phone)}</div>`);
+  if (p.cat === 'toll') lines.push(`<div class="pd-line">💰 ${p.price ? 'R$ ' + p.price.toFixed(2).replace('.', ',') : 'preço não informado no mapa'}${p.freeFlow ? ' · free-flow (sem cabine)' : ''}</div>`);
+  $('#pdBody').innerHTML = lines.join('');
+  $('#pdGmaps').href = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`;
+  $('#pdCall').hidden = !p.phone;
+  if (p.phone) $('#pdCall').href = 'tel:' + p.phone.replace(/[^\d+]/g, '');
+  $('#poiModal').hidden = false;
+}
+$('#pdClose').onclick = () => { $('#poiModal').hidden = true; };
+$('#poiModal').onclick = (e) => { if (e.target.id === 'poiModal') $('#poiModal').hidden = true; };
+$('#pdMap').onclick = () => {
+  $('#poiModal').hidden = true;
+  if (!S.nav) {
+    show('v-plan');
+    $('#v-plan').scrollTop = 0;
+  } else {
+    S.follow = false;
+    toast('Toque 🎯 para voltar a seguir o carro.', 4000);
+  }
+  map.setView([pdPoi.lat, pdPoi.lon], 16);
+  L.popup().setLatLng([pdPoi.lat, pdPoi.lon]).setContent(`<b>${esc(pdPoi.name)}</b>`).openOn(map);
+};
+$('#poiStrip').onclick = (e) => {
+  const el = e.target.closest('.poi[data-i]');
+  if (el) openPoi(S.cardPois?.[+el.dataset.i]);
+};
+
+// ================= Exportar histórico e backup completo =================
+function csvCell(v) {
+  const t = String(v ?? '');
+  return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
+
+$('#btnExportDrives').onclick = async () => {
+  const metas = await Places.drives();
+  if (!metas.length) return toast('Nenhuma viagem no histórico ainda.');
+  const rows = [['data', 'saida', 'chegada', 'viagem', 'km', 'tempo_ao_volante_min', 'vel_max_kmh', 'radares', 'paradas', 'motivos_das_paradas'].join(';')];
+  for (const m of metas) {
+    const d = await Places.loadDrive(m.id);
+    const reasons = (d?.stops || []).map((x) => (REASON[x.reason] || REASON['']).t).join(', ');
+    rows.push([
+      new Date(m.start).toLocaleDateString('pt-BR'), fmtClock(new Date(m.start)), fmtClock(new Date(m.end)), m.name,
+      (m.distance / 1000).toFixed(1).replace('.', ','), Math.round(m.movingSec / 60), Math.round(m.maxKmh), m.radars || 0, m.stops || 0, reasons,
+    ].map(csvCell).join(';'));
+  }
+  // BOM para o Excel abrir os acentos certinho.
+  download(`historico-viagens-${stamp()}.csv`, '﻿' + rows.join('\n'), 'text/csv');
+};
+
+// GPX de uma viagem (abre no Google Earth, Strava, etc.)
+async function exportDriveGpx(id) {
+  const d = await Places.loadDrive(id);
+  if (!d?.track?.length) return toast('Trajeto não disponível.');
+  const x = (t) => String(t).replace(/[<&>]/g, (c) => ({ '<': '&lt;', '&': '&amp;', '>': '&gt;' }[c]));
+  const wpts = (d.stops || []).map((st) => `<wpt lat="${st.lat}" lon="${st.lon}"><time>${new Date(st.start).toISOString()}</time><name>${x((REASON[st.reason] || REASON['']).t)}</name></wpt>`).join('\n');
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="${x(S.settings.appName)}" xmlns="http://www.topografix.com/GPX/1/1">
+<metadata><name>${x(d.name)}</name><time>${new Date(d.start).toISOString()}</time></metadata>
+${wpts}
+<trk><name>${x(d.name)}</name><trkseg>
+${d.track.map(([lat, lon]) => `<trkpt lat="${lat}" lon="${lon}"/>`).join('\n')}
+</trkseg></trk>
+</gpx>`;
+  download(`viagem-${new Date(d.start).toISOString().slice(0, 10)}.gpx`, gpx, 'application/gpx+xml');
+}
+
+const BACKUP_KEYS = ['settings', 'radars', 'places', 'recents', 'drives', 'cities', 'cityQueue', 'trips'];
+$('#btnBackup').onclick = async () => {
+  const data = {};
+  for (const k of BACKUP_KEYS) data[k] = await kv.get(k);
+  for (const t of data.trips || []) data['trip:' + t.id] = await kv.get('trip:' + t.id);
+  for (const d of data.drives || []) data['drive:' + d.id] = await kv.get('drive:' + d.id);
+  const json = JSON.stringify({ app: 'seu-caminho-seguro', kind: 'backup', version: 1, created: new Date().toISOString(), data });
+  download(`backup-caminho-seguro-${stamp()}.json`, json, 'application/json');
+  toast('💾 Backup salvo. Guarde o arquivo (ex.: no iCloud Drive / Google Drive).', 6000);
+};
+$('#restoreFile').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const b = JSON.parse(await file.text());
+    if (b.kind !== 'backup' || !b.data) throw new Error('não é um backup deste app');
+    if (!confirm(`Restaurar o backup de ${new Date(b.created).toLocaleString('pt-BR')}? Os dados atuais deste celular serão substituídos.`)) return;
+    for (const [k, v] of Object.entries(b.data)) if (v != null) await kv.set(k, v);
+    toast('✅ Backup restaurado. Reabrindo…', 2500);
+    setTimeout(() => location.reload(), 1500);
+  } catch (err) {
+    toast('⚠ Arquivo inválido: ' + err.message);
+  }
+};
 
 // ================= Mapa noturno =================
 function applyNight() {

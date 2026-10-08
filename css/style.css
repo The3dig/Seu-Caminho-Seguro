@@ -251,3 +251,13 @@ body.night .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(
 .city-row .badges { font-size: 15px; }
 .mk.city { font-size: 11px; background: var(--gold); color: #2b1a00; border-radius: 50%; width: 14px; height: 14px; border: 2px solid #fff; }
 .mk.city.passed { background: #6b7c8c; }
+
+/* Limite da via */
+.speed { position: relative; }
+.limit-sign { position: absolute; top: -16px; right: -18px; width: 46px; height: 46px; border-radius: 50%; background: #fff;
+  border: 5px solid var(--red); color: #000; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px #0009; }
+.limit-sign b { font-size: 17px; font-weight: 900; line-height: 1; }
+.speed.over .limit-sign { animation: flash .6s steps(2) infinite; }
+.poi { cursor: pointer; }
+.poi.optional { opacity: .65; border: 2px dashed #4a5b6c; }
+.pd-line { margin: 4px 0; }

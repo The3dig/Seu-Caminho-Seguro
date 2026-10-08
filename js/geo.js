@@ -30,7 +30,7 @@ function xy(p, ref) {
   };
 }
 
-function projSeg(p, a, b) {
+export function projSeg(p, a, b) {
   const A = xy(a, p), B = xy(b, p);
   const dx = B.x - A.x, dy = B.y - A.y;
   const L = dx * dx + dy * dy;

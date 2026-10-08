@@ -116,7 +116,7 @@
     <div class="drive-bottom">
       <div class="pois" id="poiStrip"></div>
       <div class="hud">
-        <div class="speed" id="speedBox"><b id="spd">0</b><small>km/h</small></div>
+        <div class="speed" id="speedBox"><b id="spd">0</b><small>km/h</small><div class="limit-sign" id="limitSign" hidden><b id="limitVal"></b></div></div>
         <div class="eta">
           <b id="etaClock">--:--</b>
           <small id="etaRem">--</small>
@@ -201,6 +201,9 @@
     <div class="stats" id="driveStats"></div>
     <ul class="list" id="driveList"></ul>
     <div class="row wrap">
+      <button class="btn" id="btnExportDrives">📊 Exportar histórico (planilha)</button>
+    </div>
+    <div class="row wrap" style="margin-top:8px">
       <button class="btn" id="btnClearRecents">Limpar recentes</button>
       <button class="btn" id="btnClearDrives">Apagar histórico</button>
     </div>
@@ -348,6 +351,7 @@
       <option value="off">Sempre claro</option>
     </select>
     <label class="check"><input type="checkbox" id="sRecord"> Gravar histórico das viagens (trajeto percorrido)</label>
+    <label class="check"><input type="checkbox" id="sSpeedWarn"> Avisar quando passar do limite da via (dados do mapa)</label>
     <label class="check"><input type="checkbox" id="sCities"> Registrar as cidades por onde passo (diário de cidades)</label>
     <label class="check"><input type="checkbox" id="sAskStop"> Perguntar o motivo quando eu parar (2 min parado)</label>
     <label class="check"><input type="checkbox" id="sWalk"> 🚶 Modo teste a pé</label>
@@ -362,6 +366,12 @@
     <input id="sPoiRadius" type="number" min="100" max="2000" step="50">
     <button class="btn primary wide" id="btnSaveSettings">Salvar</button>
     <button class="btn wide" id="btnShowIntro">🌅 Ver a abertura de novo</button>
+    <h3>Backup completo</h3>
+    <p class="hint">Guarda tudo num arquivo: radares, lugares, viagens, histórico, cidades e ajustes. Use para trocar de celular ou não perder nada.</p>
+    <div class="row wrap">
+      <button class="btn" id="btnBackup">💾 Fazer backup</button>
+      <label class="btn file">📥 Restaurar backup<input type="file" id="restoreFile" accept=".json,application/json" hidden></label>
+    </div>
     <h3>Mapa offline</h3>
     <p class="hint">Os dados da viagem (rota, manobras, radares, postos) ficam 100% offline. As imagens do mapa ficam guardadas conforme você as visualiza — antes de sair, passe o dedo pela rota no mapa com internet para deixá-las salvas.</p>
     <p class="hint" id="storageInfo"></p>
@@ -399,6 +409,19 @@
         <button class="btn" id="pmCancel">Cancelar</button>
         <button class="btn" id="pmDelete" hidden>🗑</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal" id="poiModal" hidden>
+    <div class="modal-box">
+      <h3 id="pdTitle" style="margin-top:0"></h3>
+      <div id="pdBody"></div>
+      <div class="row wrap" style="margin-top:12px">
+        <button class="btn" id="pdMap">🗺 Ver no mapa</button>
+        <a class="btn" id="pdGmaps" target="_blank" rel="noopener">📍 Google Maps</a>
+        <a class="btn" id="pdCall" hidden>📞 Ligar</a>
+      </div>
+      <button class="btn link wide" id="pdClose">Fechar</button>
     </div>
   </div>
 

@@ -22,8 +22,11 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | 😴 **Cansaço** | Lembrete de pausa a cada 2 h ao volante (1h30 de madrugada), já dizendo onde fica o próximo posto. Parada de 10 min zera o contador. |
 | 🧭 **Planeje sua viagem** | Saída, destino e cidades de parada (marque onde quer dormir). O app monta o roteiro dia a dia: pausas a cada 2 h em postos/restaurantes reais da rota (almoço e jantar na hora certa), pernoite sugerido quando passa do limite de horas ao volante, hospedagens perto do pernoite (com links para Booking/Google), pedágios e combustível estimados. Durante a viagem, o app avisa as paradas planejadas. |
 | 💰 **Pedágio (estimativa)** | Conta as praças e pórticos free-flow do OpenStreetMap na rota; usa o preço do mapa quando existe e, senão, a tarifa média que você informar. |
-| 🅿️ **Paradas fora do plano** | Parou 2 min? O app pergunta o motivo com botões grandes (😴 sono/lavar o rosto, 🚻, ☕, 🍽️, ⛽…) — ou toque ☕ na tela para registrar. “Sono” zera o contador de cansaço. Fica tudo no histórico da viagem. |
+| 🅿️ **Paradas fora do plano** | Divergir do roteiro é normal: se você acabou de parar, a pausa planejada seguinte vira “opcional” e fica em silêncio. Parou 2 min? O app pergunta o motivo com botões grandes (😴 sono/lavar o rosto, 🚻, ☕, 🍽️, ⛽…) — ou toque ☕ na tela para registrar. “Sono” zera o contador de cansaço. Fica tudo no histórico da viagem. |
 | 🏙️ **Cidades que conheço** | Diário automático das cidades por onde você passou e onde parou, com relatório por estado, mapa e compartilhamento. Funciona offline (descobre os nomes quando voltar a internet). |
+| 🚦 **Limite da via** | Placa com o limite do trecho (dados do OpenStreetMap, baixados com a viagem) e aviso único quando você passa >10% dele. Radar sem limite cadastrado usa o da via. |
+| ⛽ **Detalhes do lugar** | Toque no card de um posto/restaurante (ou na lista do resumo): horário, 24h, telefone, distância, ver no mapa e Google Maps. |
+| 💾 **Backup e exportação** | Backup completo para trocar de celular; histórico em planilha (CSV) e cada trajeto em GPX. |
 | 🏠 **Lugares fixos** | Casa, Trabalho e favoritos com ícone: um toque no atalho e a rota já é traçada. Digitar “casa” no destino também funciona. |
 | 🕘 **Frequentes** | O app lembra os destinos usados e sugere os mais frequentes. |
 | 📍 **Histórico** | Cada viagem fica salva com o trajeto percorrido, km, tempo ao volante, velocidade máxima e radares passados (aba Lugares). |

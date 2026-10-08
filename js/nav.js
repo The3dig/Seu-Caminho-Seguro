@@ -11,6 +11,7 @@ function sayDist(m) {
 import { isActive } from './radars.js';
 import { speak, beep } from './voice.js';
 import { plannedStops } from './planner.js';
+import { limitAt } from './pois.js';
 
 const OFF_ROUTE_M = 80;
 const RADAR_ON_ROUTE_M = 45;
@@ -30,6 +31,10 @@ export class Nav {
     this.steps = trip?.steps || [];
     this.planned = trip?.plan ? plannedStops(trip.plan) : [];
     this.plannedSpoken = new Map();
+    this.limits = trip?.speedLimits || [];
+    this.overSince = 0;
+    this.overWarned = false;
+    this.lastStopEnd = 0; // fim da última parada (para silenciar pausa planejada)
     this.progress = 0;
     this.hint = 0;
     this.offCount = 0;
@@ -146,8 +151,9 @@ export class Nav {
       const ahead = this.routeRadars.find((x) => x.along > p - 15);
       if (ahead) {
         const d = ahead.along - p;
-        this.alertRadar(ahead.r, d, kmh);
-        if (d <= this.thresholds[0]) state.radar = { r: ahead.r, d, over: ahead.r.limit && kmh > ahead.r.limit + 2 };
+        const lim = ahead.r.limit || limitAt(this.limits, ahead.along);
+        this.alertRadar(ahead.r, d, kmh, lim);
+        if (d <= this.thresholds[0]) state.radar = { r: ahead.r, d, limit: lim, over: lim && kmh > lim + 2 };
       }
       for (const x of this.routeRadars) {
         if (x.along > p - 40) break;
@@ -182,13 +188,33 @@ export class Nav {
     state.next = next;
     this.fuelWarnings(p);
 
+    // Limite de velocidade da via (dados do mapa)
+    const roadLimit = this.offRoute ? null : limitAt(this.limits, p);
+    state.roadLimit = roadLimit;
+    if (roadLimit && kmh > roadLimit * 1.1 + 2) {
+      state.overRoad = true;
+      if (!this.overSince) this.overSince = Date.now();
+      // Avisa uma vez por excesso (só depois de 4 s acima, sem ficar repetindo).
+      if (!this.overWarned && Date.now() - this.overSince > 4000 && this.settings.speedWarn !== false && !state.radar) {
+        this.overWarned = true;
+        beep({ times: 1, freq: 1200, dur: 0.12 });
+        speak(`Limite ${roadLimit}.`);
+      }
+    } else if (!roadLimit || kmh < roadLimit + 2) {
+      this.overSince = 0;
+      this.overWarned = false;
+    }
+
     // Paradas do roteiro planejado
     const ps = this.planned.find((x) => x.along > p - 100);
     if (ps) {
       const d = ps.along - p;
-      state.planned = { ...ps, d, sec: d / avg };
+      // Parou há pouco (sono, café…)? A pausa planejada vira opcional e fica em silêncio.
+      const agoMin = this.lastStopEnd ? Math.round((Date.now() - this.lastStopEnd) / 60000) : null;
+      const optional = ps.kind === 'pausa' && (this.inStop || (agoMin != null && agoMin < 45));
+      state.planned = { ...ps, d, sec: d / avg, optional, agoMin };
       const lvl = d <= 1200 ? 2 : d <= 5500 ? 1 : 0;
-      if (lvl > (this.plannedSpoken.get(ps.along) || 0)) {
+      if (!optional && lvl > (this.plannedSpoken.get(ps.along) || 0)) {
         this.plannedSpoken.set(ps.along, lvl);
         const why = ps.kind === 'pernoite' ? 'Pernoite planejado' : ps.kind === 'pausa' ? 'Pausa planejada' : `Parada para ${ps.kind}`;
         speak(`${why} em ${sayDist(d)}: ${ps.name}.`);
@@ -196,14 +222,14 @@ export class Nav {
     }
   }
 
-  alertRadar(r, d, kmh) {
+  alertRadar(r, d, kmh, limit = r.limit) {
     const last = this.spoken.get(r.id) ?? Infinity;
     const crossed = this.thresholds.filter((t) => d <= t);
     if (crossed.length) {
       const t = crossed[crossed.length - 1];
       if (t < last) {
         this.spoken.set(r.id, t);
-        const lim = r.limit ? `, limite ${r.limit}` : '';
+        const lim = limit ? `, limite ${limit}` : '';
         const isLast = t === this.thresholds[this.thresholds.length - 1];
         if (isLast) {
           beep({ times: 3, freq: 1000 });
@@ -214,7 +240,7 @@ export class Nav {
         }
       }
     }
-    if (r.limit && kmh > r.limit + 2 && d < 500) {
+    if (limit && kmh > limit + 2 && d < 500) {
       const now = Date.now();
       if (now - this.lastOverBeep > 4000) {
         this.lastOverBeep = now;
@@ -292,7 +318,7 @@ export class Nav {
     }
     if (best) {
       this.alertRadar(best.r, best.d, kmh);
-      if (best.d <= this.thresholds[0]) state.radar = { ...best, over: best.r.limit && kmh > best.r.limit + 2 };
+      if (best.d <= this.thresholds[0]) state.radar = { ...best, limit: best.r.limit, over: best.r.limit && kmh > best.r.limit + 2 };
     }
   }
 
@@ -310,6 +336,7 @@ export class Nav {
         // Voltou a andar: fecha a parada.
         const st = this.inStop;
         this.inStop = null;
+        this.lastStopEnd = Date.now();
         this.ui.onStopEnd?.(st, Math.round((Date.now() - st.start) / 1000));
       }
     } else {
@@ -341,6 +368,7 @@ export class Nav {
 
   // Parada de descanso (sono) informada: zera o contador de cansaço.
   rested() {
+    this.lastStopEnd = Date.now();
     this.movingSec = 0;
     this.nextFatigueAt = this.fatigueLimit();
   }
