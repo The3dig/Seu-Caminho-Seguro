@@ -141,15 +141,26 @@ function buildRoute(r) {
   };
 }
 
-// Nome da cidade num ponto (para sugerir onde dormir/parar).
+// Cidade/estado de um ponto (para pernoites e para o diário de cidades).
+// Lança erro se estiver sem internet — quem chama decide se tenta depois.
+export async function placeAt(lat, lon) {
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&accept-language=pt-BR&lat=${lat}&lon=${lon}`);
+  if (!res.ok) throw new Error('reverse ' + res.status);
+  const d = await res.json();
+  const a = d.address || {};
+  return {
+    city: a.city || a.town || a.village || a.municipality || a.county || '',
+    uf: (a['ISO3166-2-lvl4'] || '').replace(/^BR-/, ''),
+    state: a.state || '',
+    country: a.country || '',
+    countryCode: (a.country_code || '').toUpperCase(),
+  };
+}
+
 export async function cityAt(lat, lon) {
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&accept-language=pt-BR&lat=${lat}&lon=${lon}`);
-    const d = await res.json();
-    const a = d.address || {};
-    const city = a.city || a.town || a.village || a.municipality || a.county || '';
-    const uf = (a['ISO3166-2-lvl4'] || '').replace('BR-', '') || a.state || '';
-    return city ? `${city}${uf ? '/' + uf : ''}` : (d.display_name || '').split(',')[0];
+    const p = await placeAt(lat, lon);
+    return p.city ? `${p.city}${p.uf ? '/' + p.uf : ''}` : '';
   } catch {
     return '';
   }

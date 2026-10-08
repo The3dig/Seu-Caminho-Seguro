@@ -240,3 +240,14 @@ body.night .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(
 .links { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .links a { font-size: 13px; padding: 6px 10px; }
 .tabs button span { font-size: 10px; }
+
+/* Paradas e cidades */
+.reasons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.reasons .btn { padding: 14px 8px; font-size: 16px; font-weight: 700; }
+.reasons .btn.sono { grid-column: span 2; background: #3a2a5a; }
+.state-group { margin: 14px 0; }
+.state-group h4 { margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+.uf { background: var(--gold); color: #2b1a00; border-radius: 6px; padding: 2px 7px; font-size: 13px; font-weight: 800; }
+.city-row .badges { font-size: 15px; }
+.mk.city { font-size: 11px; background: var(--gold); color: #2b1a00; border-radius: 50%; width: 14px; height: 14px; border: 2px solid #fff; }
+.mk.city.passed { background: #6b7c8c; }

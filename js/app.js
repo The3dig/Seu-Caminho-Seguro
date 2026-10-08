@@ -10,6 +10,7 @@ import * as Spotify from './spotify.js';
 import { Nav } from './nav.js';
 import * as Places from './places.js';
 import { CONFIG } from './config.js';
+import * as Cities from './cities.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -127,7 +128,7 @@ function drawTrip(trip, fit = true) {
 }
 
 // ================= Navegação entre telas =================
-const views = ['v-intro', 'v-plan', 'v-trip', 'v-places', 'v-drive', 'v-radars', 'v-music', 'v-settings'];
+const views = ['v-intro', 'v-plan', 'v-trip', 'v-places', 'v-cities', 'v-drive', 'v-radars', 'v-music', 'v-settings'];
 function show(id) {
   for (const v of views) $('#' + v).hidden = v !== id;
   document.body.classList.toggle('intro', id === 'v-intro');
@@ -138,8 +139,10 @@ function show(id) {
   if (id === 'v-settings') renderSettings();
   if (id === 'v-plan') { $('#walkWarn').hidden = !S.settings.walkTest; renderQuick(); }
   if (id === 'v-places') renderPlaces();
+  if (id === 'v-cities') renderCityReport();
   if (id === 'v-trip') initTripForm();
-  if (id !== 'v-places') layers.track.clearLayers();
+  if (id !== 'v-places' && id !== 'v-cities') layers.track.clearLayers();
+  if (id === 'v-cities') $('#tabs button[data-view="v-places"]').classList.add('active');
   setTimeout(() => map.invalidateSize(), 50);
 }
 for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => show(b.dataset.view);
@@ -681,7 +684,9 @@ async function startDrive(trip, simulate, resume = null) {
     Places.active.set({ tripId: trip?.id || null, driveId: S.rec.id, name: trip ? trip.name : 'Só radar' });
   }
   S.follow = true;
-  S.nav = new Nav({ trip, radars: await Radars.all(), settings: S.settings, ui: { render, askConfirm, toast } });
+  S.simulating = !!simulate;
+  Cities.resetTrack();
+  S.nav = new Nav({ trip, radars: await Radars.all(), settings: S.settings, ui: { render, askConfirm, toast, onStop, onStopEnd } });
   drawTrip(trip, false);
   layers.alts.clearLayers();
   show('v-drive');
@@ -745,7 +750,8 @@ function stopDrive() {
   S.wakeLock?.release?.();
   S.wakeLock = null;
   layers.me.clearLayers();
-  $('#confirmBox').hidden = $('#markBox').hidden = true;
+  $('#confirmBox').hidden = $('#markBox').hidden = $('#stopBox').hidden = true;
+  curStop = null;
   S.confirmQueue = [];
   show('v-plan');
   drawRadars();
@@ -761,6 +767,7 @@ let lastActiveSave = 0;
 function render(st) {
   const f = st.fix;
   S.lastFix = f;
+  if (S.settings.logCities && !S.simulating) Cities.track(f);
   if (S.rec) {
     S.rec.add(f, st.kmh);
     if (Date.now() - lastActiveSave > 60000) {
@@ -797,7 +804,7 @@ function render(st) {
   if (st.step) {
     $('#turnArrow').textContent = st.step.arrow;
     $('#turnDist').textContent = fmtDist(st.stepDist);
-    $('#turnText').textContent = st.step.text;
+    $('#turnText').textContent = st.step.type === 'arrive' ? 'até o destino — siga a rota' : st.step.text;
   } else if (st.arrived) {
     if ($('#turnDist').textContent !== 'Chegou!') toast('🏁 Você chegou! Toque ⏹ para encerrar e salvar no histórico.', 10000);
     $('#turnArrow').textContent = '🏁';
@@ -1032,6 +1039,8 @@ function renderSettings() {
   $('#sWalk').checked = s.walkTest;
   $('#sNight').value = s.nightMap;
   $('#sRecord').checked = s.recordDrives;
+  $('#sCities').checked = s.logCities;
+  $('#sAskStop').checked = s.askStopReason;
   $('#sAlert').value = s.alertDist.join(', ');
   $('#sFatigue').value = s.fatigueMin;
   $('#sFuelGap').value = s.fuelGapKm;
@@ -1049,6 +1058,8 @@ $('#btnSaveSettings').onclick = async () => {
   s.walkTest = $('#sWalk').checked;
   s.nightMap = $('#sNight').value;
   s.recordDrives = $('#sRecord').checked;
+  s.logCities = $('#sCities').checked;
+  s.askStopReason = $('#sAskStop').checked;
   applyNight();
   const ad = $('#sAlert').value.split(/[,; ]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 50 && x <= 3000);
   if (ad.length) s.alertDist = ad.sort((a, b) => b - a);
@@ -1373,6 +1384,7 @@ async function renderPlaces() {
     li.querySelector('[data-a=del]').onclick = async () => { await Places.removeRecent(r.id); renderPlaces(); };
   }
 
+  renderCityCard();
   const ds = await Places.drives();
   const km = ds.reduce((a, d) => a + d.distance, 0) / 1000;
   const hrs = ds.reduce((a, d) => a + d.movingSec, 0);
@@ -1382,7 +1394,7 @@ async function renderPlaces() {
     const dt = new Date(d.start);
     return `<li data-i="${i}">
       <div class="grow"><div class="title">${esc(d.name)}</div>
-      <div class="sub">${dt.toLocaleDateString('pt-BR')} ${fmtClock(dt)} · ${fmtDist(d.distance)} · ${fmtDur(d.movingSec)} · máx ${Math.round(d.maxKmh)} km/h${d.radars ? ` · ${d.radars} radar${d.radars > 1 ? 'es' : ''}` : ''}</div></div>
+      <div class="sub">${dt.toLocaleDateString('pt-BR')} ${fmtClock(dt)} · ${fmtDist(d.distance)} · ${fmtDur(d.movingSec)} · máx ${Math.round(d.maxKmh)} km/h${d.radars ? ` · ${d.radars} radar${d.radars > 1 ? 'es' : ''}` : ''}${d.stops ? ` · ${d.stops} parada${d.stops > 1 ? 's' : ''}` : ''}</div></div>
       <button class="btn" data-a="map">🗺</button><button class="btn" data-a="del">🗑</button>
     </li>`;
   }).join('') : '<p class="hint">Suas viagens aparecem aqui com o trajeto percorrido (dá pra desligar em Ajustes).</p>';
@@ -1395,6 +1407,12 @@ async function renderPlaces() {
       const line = L.polyline(full.track, { color: '#e9b44c', weight: 6, opacity: .9 }).addTo(layers.track);
       L.marker(full.track[0], { icon: icon('🟢') }).addTo(layers.track);
       L.marker(full.track[full.track.length - 1], { icon: icon('🔴') }).addTo(layers.track);
+      for (const st of full.stops || []) {
+        const r = REASON[st.reason] || { ic: '⏸', t: 'Parada' };
+        L.marker([st.lat, st.lon], { icon: icon(r.ic, 'mk', 26) })
+          .bindPopup(`<b>${r.t}</b><br>${fmtClock(new Date(st.start))}${st.dur ? ' · ' + fmtDur(st.dur) : ''}${st.place ? '<br>' + esc(st.place) : ''}`)
+          .addTo(layers.track);
+      }
       // Mostra o mapa por cima da lista por alguns segundos.
       $('#v-places').hidden = true;
       map.invalidateSize();
@@ -1498,6 +1516,187 @@ $('#pmDelete').onclick = async () => {
   if (!$('#v-places').hidden) renderPlaces();
 };
 
+// ================= Paradas fora do roteiro =================
+const REASONS = [
+  { k: 'sono', ic: '😴', t: 'Sono / lavar o rosto', cls: 'sono' },
+  { k: 'banheiro', ic: '🚻', t: 'Banheiro' },
+  { k: 'cafe', ic: '☕', t: 'Café / lanche' },
+  { k: 'refeicao', ic: '🍽️', t: 'Refeição' },
+  { k: 'abastecer', ic: '⛽', t: 'Abastecer' },
+  { k: 'passeio', ic: '📸', t: 'Passeio / foto' },
+  { k: 'outro', ic: '📍', t: 'Outro' },
+];
+const REASON = Object.fromEntries(REASONS.map((r) => [r.k, r]));
+REASON[''] = { ic: '🅿️', t: 'Parada' };
+REASON['check-in'] = { ic: '📍', t: 'Check-in' };
+let curStop = null;
+
+$('#stopReasons').innerHTML = REASONS.map((r) => `<button class="btn ${r.cls || ''}" data-k="${r.k}">${r.ic} ${r.t}</button>`).join('');
+for (const b of $('#stopReasons').querySelectorAll('button')) b.onclick = () => registerStop(curStop, b.dataset.k);
+
+function onStop(st) {
+  if (!S.settings.askStopReason) return registerStop(st, '', { quiet: true });
+  openStopBox(st);
+}
+
+function openStopBox(st) {
+  curStop = st;
+  $('#stopText').textContent = st.auto ? '🅿️ Parou? Qual o motivo?' : '☕ Registrar parada — qual o motivo?';
+  $('#stopBox').hidden = false;
+  Voice.beep({ times: 1, freq: 520 });
+}
+
+// Nome do lugar: o posto/restaurante da rota mais perto (até 300 m).
+function placeName(pt) {
+  let best = null, bd = 300;
+  for (const p of S.nav?.trip?.pois || []) {
+    const d = Math.hypot((p.lat - pt.lat) * 111000, (p.lon - pt.lon) * 111000 * Math.cos(pt.lat * Math.PI / 180));
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best ? best.name : '';
+}
+
+function registerStop(st, reason, { quiet = false } = {}) {
+  if (!st) return;
+  $('#stopBox').hidden = true;
+  curStop = null;
+  st.reason = reason;
+  if (st.recId) S.rec?.updateStop(st.recId, { reason });
+  else if (S.rec) st.recId = S.rec.addStop({ ...st, reason, place: placeName(st) }).id;
+  if (S.settings.logCities && !S.simulating && !st.cityLogged) {
+    st.cityLogged = true;
+    Cities.markStop(st, reason);
+  }
+  if (reason === 'sono') {
+    S.nav?.rested();
+    Voice.speak('Descanso registrado. Lave o rosto, tome uma água e só volte quando estiver bem.');
+    toast('😴 Descanso registrado — contador de cansaço zerado.', 5000);
+  } else if (!quiet) {
+    toast(`${REASON[reason]?.ic || '⏸'} Parada registrada.`, 2500);
+  }
+}
+
+function onStopEnd(st, dur) {
+  if (curStop === st) {
+    // Não respondeu: registra só se foi uma parada de verdade (5 min+).
+    $('#stopBox').hidden = true;
+    curStop = null;
+    if (dur >= 300) registerStop(st, '', { quiet: true });
+  }
+  if (st.recId) S.rec?.updateStop(st.recId, { dur });
+}
+
+$('#btnStopTraffic').onclick = () => { $('#stopBox').hidden = true; curStop = null; };
+$('#btnPause').onclick = () => {
+  const st = S.nav?.manualStop();
+  if (!st) return toast('Aguardando sinal de GPS…');
+  openStopBox(st);
+};
+
+// ================= Diário de cidades =================
+async function renderCityCard() {
+  const list = await Cities.all();
+  const st = Cities.stats(list);
+  $('#cityStats').innerHTML = `<div><b>${st.cities}</b><small>cidades</small></div><div><b>${st.states}</b><small>estados</small></div><div><b>${st.stopped}</b><small>onde parou</small></div>`;
+  const pend = await Cities.pending();
+  $('#cityPending').textContent = pend ? `⏳ ${pend} ponto(s) aguardando internet para descobrir a cidade.` : (list.length ? '' : 'As cidades aparecem aqui conforme você viaja com o app aberto.');
+}
+
+const UF_NAMES = { AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará', DF: 'Distrito Federal', ES: 'Espírito Santo', GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba', PR: 'Paraná', PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte', RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina', SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins' };
+const fmtDate = (t) => new Date(t).toLocaleDateString('pt-BR');
+
+function cityRow(c) {
+  const reasons = Object.keys(c.reasons || {}).map((k) => REASON[k]?.ic).filter(Boolean).join('');
+  return `<li class="city-row" data-key="${esc(c.key)}">
+    <div class="grow"><div class="title">${esc(c.city)} <span class="badges">${c.stopped ? '🛑' : '🚗'}${reasons}</span></div>
+    <div class="sub">${c.stopped ? `parou ${c.stops}×` : 'passou'} · ${c.days.length} dia${c.days.length > 1 ? 's' : ''} · ${c.first === c.last || fmtDate(c.first) === fmtDate(c.last) ? fmtDate(c.first) : `${fmtDate(c.first)} → ${fmtDate(c.last)}`}</div></div>
+    <button class="btn" data-a="del">🗑</button></li>`;
+}
+
+async function renderCityReport() {
+  const list = await Cities.all();
+  const st = Cities.stats(list);
+  $('#crStats').innerHTML = `<div><b>${st.cities}</b><small>cidades</small></div><div><b>${st.states}</b><small>estados</small></div><div><b>${st.stopped}</b><small>onde parou</small></div>`;
+  const sort = $('#crSort').value;
+  let html = '';
+  if (!list.length) html = '<p class="hint">Nenhuma cidade ainda. Elas são registradas sozinhas enquanto você dirige com o app aberto — ou toque em “📍 Estou aqui”.</p>';
+  else if (sort === 'state') {
+    const groups = {};
+    for (const c of list) (groups[c.uf || c.state || c.country] ||= []).push(c);
+    html = Object.entries(groups).sort((a, b) => b[1].length - a[1].length).map(([uf, cs]) =>
+      `<div class="state-group"><h4><span class="uf">${esc(uf)}</span>${esc(UF_NAMES[uf] || cs[0].state || '')} <small class="sub">· ${cs.length} cidade${cs.length > 1 ? 's' : ''}</small></h4>
+       <ul class="list">${cs.sort((a, b) => a.city.localeCompare(b.city, 'pt-BR')).map(cityRow).join('')}</ul></div>`).join('');
+  } else {
+    const arr = [...list].sort(sort === 'recent' ? (a, b) => b.last - a.last : (a, b) => b.days.length + b.stops - (a.days.length + a.stops));
+    html = `<ul class="list">${arr.map((c) => cityRow({ ...c, city: `${c.city} (${c.uf || c.state})` })).join('')}</ul>`;
+  }
+  $('#crList').innerHTML = html;
+  for (const li of $('#crList').querySelectorAll('li')) {
+    li.querySelector('[data-a=del]').onclick = async () => {
+      if (!confirm('Remover esta cidade do diário?')) return;
+      await Cities.remove(li.dataset.key);
+      renderCityReport();
+    };
+  }
+}
+
+$('#crSort').onchange = renderCityReport;
+$('#btnCityReport').onclick = () => show('v-cities');
+$('#btnCitiesBack').onclick = () => show('v-places');
+$('#btnCheckIn').onclick = async () => {
+  try {
+    const p = await getPosition({ maximumAge: 10000 });
+    Cities.checkIn(p);
+    toast('📍 Anotado! A cidade aparece no diário em instantes (ou quando houver internet).', 4000);
+  } catch (e) {
+    toast('⚠ ' + e.message);
+  }
+};
+$('#btnCitiesMap').onclick = async () => {
+  const list = await Cities.all();
+  if (!list.length) return toast('Nenhuma cidade ainda.');
+  layers.track.clearLayers();
+  for (const c of list) {
+    L.marker([c.lat, c.lon], { icon: icon('', `mk city${c.stopped ? '' : ' passed'}`, 14) })
+      .bindPopup(`<b>${esc(c.city)}/${esc(c.uf || c.state)}</b><br>${c.stopped ? `parou ${c.stops}×` : 'passou'} · ${c.days.length} dia(s)`)
+      .addTo(layers.track);
+  }
+  $('#v-cities').hidden = true;
+  map.invalidateSize();
+  map.fitBounds(L.featureGroup(layers.track.getLayers()).getBounds(), { padding: [40, 40], maxZoom: 11 });
+  toast(`🏙️ ${list.length} cidades — toque aqui para voltar ao relatório`, 30000);
+  $('#toast').onclick = () => { $('#toast').hidden = true; $('#toast').onclick = () => { $('#toast').hidden = true; }; show('v-cities'); };
+};
+$('#btnCitiesShare').onclick = async () => {
+  const list = await Cities.all();
+  const st = Cities.stats(list);
+  const groups = {};
+  for (const c of list) (groups[c.uf || c.state] ||= []).push(c.city);
+  const text = `🏙️ Já conheci ${st.cities} cidades em ${st.states} estado${st.states > 1 ? 's' : ''}!\n\n` +
+    Object.entries(groups).map(([uf, cs]) => `${uf}: ${cs.sort((a, b) => a.localeCompare(b, 'pt-BR')).join(', ')}`).join('\n') + `\n\n— ${S.settings.appName}`;
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); toast('Texto copiado!'); }
+  } catch { /* cancelado */ }
+};
+$('#btnCitiesImport').onclick = async () => {
+  const metas = await Places.drives();
+  const full = [];
+  for (const m of metas) full.push(await Places.loadDrive(m.id));
+  const n = await Cities.importTracks(full);
+  toast(n ? `🔎 ${n} pontos das viagens antigas na fila. As cidades vão aparecendo (1 por segundo, precisa de internet).` : 'Nenhuma viagem gravada no histórico ainda.', 7000);
+  renderCityReport();
+};
+$('#btnCitiesClear').onclick = async () => {
+  if (!confirm('Apagar todo o diário de cidades?')) return;
+  await Cities.clear();
+  renderCityReport();
+};
+Cities.onChange(() => {
+  if (!$('#v-places').hidden) renderCityCard();
+  if (!$('#v-cities').hidden) renderCityReport();
+});
+
 // ================= Mapa noturno =================
 function applyNight() {
   const h = new Date().getHours();
@@ -1543,6 +1742,7 @@ async function init() {
   drawPlaces();
   renderSavedTrips();
   checkResume();
+  Cities.process();
   if (spAuth) {
     // Voltou da tela de autorização do Spotify.
     show('v-music');

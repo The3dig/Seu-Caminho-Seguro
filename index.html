@@ -109,6 +109,7 @@
     <div class="drive-side">
       <button class="btn round" id="btnRecenter" title="Centralizar">🎯</button>
       <button class="btn round" id="btnDriveMusic" title="Música">🎵</button>
+      <button class="btn round" id="btnPause" title="Registrar parada">☕</button>
       <button class="btn round" id="btnStop" title="Encerrar">⏹</button>
     </div>
 
@@ -131,6 +132,12 @@
         <button class="btn big no" id="btnNo">❌ Não tinha</button>
       </div>
       <div class="confirm-timer"><div></div></div>
+    </div>
+
+    <div class="confirm" id="stopBox" hidden>
+      <p id="stopText">🅿️ Parou? Qual o motivo?</p>
+      <div class="reasons" id="stopReasons"></div>
+      <button class="btn link" id="btnStopTraffic">🚦 Era trânsito — não registrar</button>
     </div>
 
     <div class="confirm" id="markBox" hidden>
@@ -177,6 +184,16 @@
     <button class="btn wide" id="btnAddPlace">➕ Novo lugar</button>
     <p class="hint">Dica: toque e segure em qualquer ponto do mapa para salvar como lugar.</p>
 
+    <h3>🏙️ Cidades que conheço</h3>
+    <div class="summary" id="cityCard">
+      <div class="stats" id="cityStats"></div>
+      <div class="row wrap">
+        <button class="btn primary" id="btnCityReport">📖 Ver relatório</button>
+        <button class="btn" id="btnCheckIn">📍 Estou aqui</button>
+      </div>
+      <p class="hint" id="cityPending"></p>
+    </div>
+
     <h3>Frequentes e recentes</h3>
     <ul class="list" id="recentList"></ul>
 
@@ -187,6 +204,31 @@
       <button class="btn" id="btnClearRecents">Limpar recentes</button>
       <button class="btn" id="btnClearDrives">Apagar histórico</button>
     </div>
+  </section>
+
+  <!-- ========== RELATÓRIO DE CIDADES ========== -->
+  <section id="v-cities" class="view sheet" hidden>
+    <button class="btn link" id="btnCitiesBack">← Lugares</button>
+    <h2>🏙️ Cidades que conheço</h2>
+    <div class="costs" id="crStats"></div>
+    <div class="row wrap">
+      <button class="btn" id="btnCitiesMap">🗺 Ver no mapa</button>
+      <button class="btn" id="btnCitiesShare">📤 Compartilhar</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <select id="crSort">
+        <option value="state">Por estado</option>
+        <option value="recent">Mais recentes</option>
+        <option value="visits">Mais visitadas</option>
+      </select>
+    </div>
+    <div id="crList"></div>
+    <details class="more">
+      <summary>Mais opções</summary>
+      <p class="hint">As cidades são registradas sozinhas enquanto você navega (a cada ~4 km). Sem internet, o app guarda os pontos e descobre os nomes depois.</p>
+      <button class="btn wide" id="btnCitiesImport">🔎 Buscar cidades nas viagens antigas do histórico</button>
+      <button class="btn wide" id="btnCitiesClear">🗑 Apagar diário de cidades</button>
+    </details>
   </section>
 
   <!-- ========== RADARES ========== -->
@@ -306,6 +348,8 @@
       <option value="off">Sempre claro</option>
     </select>
     <label class="check"><input type="checkbox" id="sRecord"> Gravar histórico das viagens (trajeto percorrido)</label>
+    <label class="check"><input type="checkbox" id="sCities"> Registrar as cidades por onde passo (diário de cidades)</label>
+    <label class="check"><input type="checkbox" id="sAskStop"> Perguntar o motivo quando eu parar (2 min parado)</label>
     <label class="check"><input type="checkbox" id="sWalk"> 🚶 Modo teste a pé</label>
     <p class="hint">Para testar andando: rota para pedestre e avisos de radar a 300, 150 e 50 m (no carro: as distâncias abaixo). Desligue antes de viajar de carro.</p>
     <label>Distâncias de aviso de radar (metros)</label>

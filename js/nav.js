@@ -300,9 +300,26 @@ export class Nav {
   trackFatigue(kmh, dt) {
     if (kmh > 10) {
       this.movingSec += dt;
+      this.drove = true;
       this.stoppedSec = 0;
+      // Parada marcada no botão ainda em movimento: espera o carro parar
+      // (e desiste se não parar em 5 min).
+      if (this.inStop && !this.inStop.auto && !this.inStop.sawStopped) {
+        if (Date.now() - this.inStop.start > 300000) this.inStop = null;
+      } else if (this.inStop) {
+        // Voltou a andar: fecha a parada.
+        const st = this.inStop;
+        this.inStop = null;
+        this.ui.onStopEnd?.(st, Math.round((Date.now() - st.start) / 1000));
+      }
     } else {
       this.stoppedSec += dt;
+      if (this.inStop && kmh < 5) this.inStop.sawStopped = true;
+      // Parado há 2 min depois de já ter rodado: provável parada (café, sono…).
+      if (!this.inStop && this.drove && this.stoppedSec >= 120 && this.lastFix) {
+        this.inStop = { start: Date.now() - this.stoppedSec * 1000, lat: this.lastFix.lat, lon: this.lastFix.lon, auto: true };
+        this.ui.onStop?.(this.inStop);
+      }
       if (this.stoppedSec > 10 * 60 && this.movingSec > 0) {
         this.movingSec = 0; // parada de 10 min conta como descanso
         this.nextFatigueAt = this.fatigueLimit();
@@ -320,6 +337,19 @@ export class Nav {
       speak(msg);
       this.ui.toast('😴 ' + msg, 15000);
     }
+  }
+
+  // Parada de descanso (sono) informada: zera o contador de cansaço.
+  rested() {
+    this.movingSec = 0;
+    this.nextFatigueAt = this.fatigueLimit();
+  }
+
+  // Parada registrada no botão (sem esperar os 2 minutos).
+  manualStop() {
+    if (!this.lastFix) return null;
+    if (!this.inStop) this.inStop = { start: Date.now(), lat: this.lastFix.lat, lon: this.lastFix.lon, auto: false };
+    return this.inStop;
   }
 
   fatigueLimit() {

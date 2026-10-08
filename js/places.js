@@ -152,11 +152,32 @@ export class DriveRecorder {
 
   radarPassed() { this.d.radars++; }
 
+  // Paradas fora do roteiro (sono, café, banheiro…).
+  addStop(st) {
+    const d = this.d;
+    d.stops = d.stops || [];
+    const item = { id: uid(), lat: +st.lat.toFixed(5), lon: +st.lon.toFixed(5), start: st.start, dur: 0, reason: st.reason || '', place: st.place || '' };
+    d.stops.push(item);
+    this.save();
+    return item;
+  }
+
+  updateStop(id, patch) {
+    const it = (this.d.stops || []).find((x) => x.id === id);
+    if (it) Object.assign(it, patch);
+    this.save();
+  }
+
+  removeStop(id) {
+    this.d.stops = (this.d.stops || []).filter((x) => x.id !== id);
+    this.save();
+  }
+
   async save() {
     this.lastSave = Date.now();
     const d = this.d;
     await kv.set('drive:' + d.id, d);
-    const meta = { id: d.id, tripId: d.tripId, name: d.name, start: d.start, end: d.end, distance: d.distance, movingSec: d.movingSec, maxKmh: d.maxKmh, radars: d.radars };
+    const meta = { id: d.id, tripId: d.tripId, name: d.name, start: d.start, end: d.end, distance: d.distance, movingSec: d.movingSec, maxKmh: d.maxKmh, radars: d.radars, stops: (d.stops || []).length };
     const list = (await drives()).filter((x) => x.id !== d.id);
     list.unshift(meta);
     for (const old of list.splice(MAX_DRIVES)) await kv.del('drive:' + old.id);
