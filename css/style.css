@@ -274,3 +274,5 @@ input[type=range] { padding: 0; height: 32px; background: none; border: 0; accen
 .from-here .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px #33c3ff33; flex: 0 0 auto; }
 .from-here.err .dot { background: var(--gold); box-shadow: 0 0 0 5px #e9b44c33; }
 .btn.busy { background: #2a6a86; color: #fff; }
+.choose-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0 4px; color: var(--muted); }
+.choose-head .btn { padding: 8px 10px; font-size: 14px; background: #3a2a10; color: #ffd27a; }

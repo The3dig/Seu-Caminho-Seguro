@@ -497,19 +497,34 @@ function chooseResult(results, what, boxSel = '#geoResults') {
     const reject = (e) => done(reject0, e);
     S.pendingChoose = () => reject(new Error('Busca cancelada.'));
     S.onChoosing?.(what);
-    box.innerHTML = `<p class="hint">Qual ${what}?</p><ul class="list geo-pick">${results.map((r, i) =>
+    box.innerHTML = `<div class="choose-head"><span>Qual ${what}?</span><button class="btn" data-none>✕ Nenhum destes, vou corrigir</button></div>
+      <ul class="list geo-pick">${results.map((r, i) =>
       `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label.split(',').slice(1).join(',').trim())}</div></div>${r.km != null ? `<span class="tag">${r.km < 10 ? r.km.toFixed(1).replace('.', ',') : Math.round(r.km)} km</span>` : ''}</li>`).join('')}
-      <li data-i="-1"><div class="grow sub">Nenhum destes — vou digitar de outro jeito</div></li></ul>`;
+      <li data-i="-1"><div class="grow sub">✕ Nenhum destes — vou digitar de outro jeito</div></li></ul>`;
+    const none = () => {
+      reject(new Error('Busca cancelada.'));
+      // Volta para o campo com o texto selecionado, pronto para corrigir.
+      const plan = boxSel === '#geoResults';
+      const field = what === 'saída' ? (plan ? '#from' : '#tpFrom') : what === 'destino' ? (plan ? '#to' : '#tpTo') : null;
+      if (field) { $(field).focus(); $(field).select(); }
+      toast('Corrija o texto (dica: inclua a cidade) e toque em buscar de novo.', 4000);
+    };
+    box.querySelector('[data-none]').onclick = none;
     for (const li of box.querySelectorAll('li')) {
       li.onclick = () => {
         const i = +li.dataset.i;
-        if (i < 0) reject(new Error('Busca cancelada. Tente incluir a cidade ou o bairro.'));
+        if (i < 0) none();
         else resolve(results[i]);
       };
     }
     box.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 }
+
+// Começou a corrigir o texto enquanto a lista estava aberta? Some com a lista.
+document.addEventListener('input', (e) => {
+  if (S.pendingChoose && e.target.matches('#to, #from, .via, #tpTo, #tpFrom, .tp-stop')) S.pendingChoose();
+});
 
 // Preenche o destino com um lugar conhecido e já traça a rota a partir de onde você está.
 function goTo(place) {
@@ -1341,7 +1356,7 @@ $('#tpBuild').onclick = async () => {
     renderPlan(trip);
   } catch (e) {
     status('');
-    toast('⚠ ' + e.message, 8000);
+    if (e.message !== 'Busca cancelada.') toast('⚠ ' + e.message, 8000);
   } finally {
     btn.disabled = false;
   }
