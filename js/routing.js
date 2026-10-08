@@ -35,14 +35,57 @@ export function parseCoords(text) {
   return { lat, lon, label: `${lat.toFixed(5)}, ${lon.toFixed(5)}` };
 }
 
-export async function geocode(text) {
-  const c = parseCoords(text);
-  if (c) return [c];
-  const url = `${NOMINATIM}?format=jsonv2&limit=5&countrycodes=br&accept-language=pt-BR&q=${encodeURIComponent(text)}`;
+const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const km = (a, b) => {
+  const r = Math.PI / 180;
+  const x = (b.lon - a.lon) * r * Math.cos(((a.lat + b.lat) / 2) * r), y = (b.lat - a.lat) * r;
+  return Math.hypot(x, y) * 6371;
+};
+
+async function nominatim(text, near) {
+  // viewbox + bounded=0: prefere resultados perto de você sem excluir os longe.
+  const box = near ? `&viewbox=${near.lon - 1.5},${near.lat + 1.5},${near.lon + 1.5},${near.lat - 1.5}&bounded=0` : '';
+  const url = `${NOMINATIM}?format=jsonv2&limit=8&countrycodes=br&accept-language=pt-BR${box}&q=${encodeURIComponent(text)}`;
   const res = await fetchT(url, {}, 15000);
   if (!res.ok) throw new Error('Falha na busca de endereço (' + res.status + ')');
-  const data = await res.json();
-  return data.map((d) => ({ lat: +d.lat, lon: +d.lon, label: d.display_name }));
+  return (await res.json()).map((d) => ({ lat: +d.lat, lon: +d.lon, label: d.display_name }));
+}
+
+// Photon (OpenStreetMap, komoot): melhor para "UPA Caraguatatuba", "posto X em Y".
+async function photon(text, near) {
+  const bias = near ? `&lat=${near.lat}&lon=${near.lon}` : '';
+  const res = await fetchT(`https://photon.komoot.io/api/?limit=10${bias}&q=${encodeURIComponent(text)}`, {}, 12000);
+  if (!res.ok) throw new Error('photon ' + res.status);
+  return ((await res.json()).features || [])
+    .filter((f) => !f.properties.countrycode || f.properties.countrycode === 'BR')
+    .map((f) => {
+      const p = f.properties;
+      const street = [p.street, p.housenumber].filter(Boolean).join(', ');
+      const label = [p.name, street !== p.name ? street : '', p.district || p.locality, p.city || p.county, p.state]
+        .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+      return { lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], label };
+    });
+}
+
+// Busca em duas fontes e ordena: primeiro os que contêm as palavras digitadas
+// (ex.: a cidade), depois os mais perto de você.
+export async function geocode(text, near = null) {
+  const c = parseCoords(text);
+  if (c) return [c];
+  const [a, b] = await Promise.allSettled([nominatim(text, near), photon(text, near)]);
+  if (a.status === 'rejected' && b.status === 'rejected') throw a.reason;
+  const all = [...(a.value || []), ...(b.value || [])];
+  const words = norm(text).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  const out = [];
+  for (const r of all) {
+    if (out.some((o) => km(o, r) < 0.15)) continue; // mesmo lugar nas duas fontes
+    const L = norm(r.label);
+    r.score = words.filter((w) => L.includes(w)).length;
+    r.km = near ? km(near, r) : null;
+    out.push(r);
+  }
+  out.sort((x, y) => y.score - x.score || (x.km ?? 0) - (y.km ?? 0));
+  return out.slice(0, 8);
 }
 
 const MOD = {

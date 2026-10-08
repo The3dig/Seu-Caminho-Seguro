@@ -482,7 +482,7 @@ async function resolvePlace(text, what, boxSel = '#geoResults') {
   if (preset) return preset;
   const fav = await Places.matchFavorite(text);
   if (fav) return { lat: fav.lat, lon: fav.lon, label: `${fav.icon} ${fav.name}` };
-  const res = await geocode(text);
+  const res = await geocode(text, S.here);
   if (!res.length) throw new Error(`Não encontrei "${text}" (${what}).`);
   if (res.length === 1) return res[0];
   return chooseResult(res, what, boxSel);
@@ -498,7 +498,7 @@ function chooseResult(results, what, boxSel = '#geoResults') {
     S.pendingChoose = () => reject(new Error('Busca cancelada.'));
     S.onChoosing?.(what);
     box.innerHTML = `<p class="hint">Qual ${what}?</p><ul class="list geo-pick">${results.map((r, i) =>
-      `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label.split(',').slice(1).join(',').trim())}</div></div></li>`).join('')}
+      `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label.split(',').slice(1).join(',').trim())}</div></div>${r.km != null ? `<span class="tag">${r.km < 10 ? r.km.toFixed(1).replace('.', ',') : Math.round(r.km)} km</span>` : ''}</li>`).join('')}
       <li data-i="-1"><div class="grow sub">Nenhum destes — vou digitar de outro jeito</div></li></ul>`;
     for (const li of box.querySelectorAll('li')) {
       li.onclick = () => {
@@ -1635,7 +1635,7 @@ async function pmSearch() {
   const q = $('#pmAddr').value.trim();
   if (!q) return;
   try {
-    const res = await geocode(q);
+    const res = await geocode(q, S.here);
     $('#pmResults').innerHTML = res.length ? res.map((r, i) => `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label)}</div></div></li>`).join('') : '<p class="hint">Nada encontrado. Inclua a cidade.</p>';
     for (const li of $('#pmResults').querySelectorAll('li')) {
       li.onclick = () => {

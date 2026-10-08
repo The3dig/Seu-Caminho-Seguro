@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v11';
+const VERSION = 'v12';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 6000;
@@ -52,20 +52,25 @@ self.addEventListener('fetch', (e) => {
   }
 
   // APIs de rota/busca: sempre online (dados ficam salvos no IndexedDB).
-  if (/nominatim|router\.project-osrm|overpass|spotify/.test(url.hostname)) return;
+  if (/nominatim|router\.project-osrm|routing\.openstreetmap|overpass|spotify|photon/.test(url.hostname)) return;
 
-  // App: abre na hora pela cópia salva e atualiza em segundo plano
-  // (sinal fraco na estrada não trava a abertura).
+  // App: com internet pega sempre a versão mais nova (espera até 3 s);
+  // sem internet ou sinal fraco, abre na hora pela cópia salva.
   e.respondWith((async () => {
     const cache = await caches.open(APP);
-    const hit = await cache.match(e.request, { ignoreSearch: true });
-    const update = fetch(e.request).then((res) => {
+    const net = fetch(e.request).then((res) => {
       if (res.ok && (url.origin === location.origin || url.hostname === 'unpkg.com')) cache.put(e.request, res.clone());
       return res;
     });
-    if (hit) { update.catch(() => {}); return hit; }
+    const timeout = new Promise((r) => setTimeout(r, 3000, null));
     try {
-      return await update;
+      const res = await Promise.race([net, timeout]);
+      if (res) return res;
+    } catch { /* offline */ }
+    const hit = await cache.match(e.request, { ignoreSearch: true });
+    if (hit) { net.catch(() => {}); return hit; }
+    try {
+      return await net;
     } catch {
       if (e.request.mode === 'navigate') return cache.match('index.html');
       return new Response('', { status: 504 });
