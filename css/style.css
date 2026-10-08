@@ -192,3 +192,24 @@ body.driving .toast { top: calc(225px + var(--safe-t)); }
 .list li img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; }
 a.btn.round { color: var(--text); }
 .walk-badge { position: absolute; left: 10px; top: 45%; background: var(--gold); color: #2b1a00; font-weight: 800; border-radius: 10px; padding: 6px 10px; font-size: 13px; }
+
+/* Lugares */
+.quick { display: flex; gap: 8px; overflow-x: auto; margin: -4px -16px 12px; padding: 0 16px 4px; }
+.quick .btn { flex: 0 0 auto; padding: 10px 14px; border-radius: 999px; font-weight: 600; }
+.quick .btn.unset { opacity: .6; border: 1px dashed #4a5b6c; background: none; }
+.chips.sugg { justify-content: flex-start; margin-top: 8px; }
+.chips.sugg .btn { font-size: 13px; padding: 6px 10px; border-radius: 999px; min-width: 0; font-weight: 500; max-width: 100%; }
+.chips.sugg .btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.modal { position: fixed; inset: 0; z-index: 2500; background: #000a; display: flex; align-items: flex-end; justify-content: center; }
+.modal-box { background: var(--bg); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; border-radius: 18px 18px 0 0;
+  padding: 18px 16px calc(18px + var(--safe-b)); box-shadow: 0 -8px 30px #000c; }
+.modal-box .btn.wide { margin-top: 8px; }
+.icons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.icons button { font-size: 22px; width: 44px; height: 44px; border-radius: 10px; border: 2px solid transparent; background: var(--panel); }
+.icons button.sel { border-color: var(--accent); }
+.pick-banner { position: fixed; left: 12px; right: 12px; top: calc(12px + var(--safe-t)); z-index: 2400; background: var(--accent); color: #002233;
+  font-weight: 700; border-radius: 12px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.resume { border-left-color: var(--accent); background: #10324a; }
+.place-icon { font-size: 26px; width: 40px; text-align: center; }
+.mk.place { font-size: 22px; }
+body.night .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }

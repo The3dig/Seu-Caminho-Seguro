@@ -20,6 +20,12 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | ➕ **Marcar radar** | Botão vermelho grande: marca um radar onde você está (e o sentido da via) e pergunta o limite. |
 | ⛽ **Postos na estrada** | Próximo posto/restaurante/parada com distância e tempo; destaque para os **24h**; aviso por voz "este foi o último posto pelos próximos X km". |
 | 😴 **Cansaço** | Lembrete de pausa a cada 2 h ao volante (1h30 de madrugada), já dizendo onde fica o próximo posto. Parada de 10 min zera o contador. |
+| 🏠 **Lugares fixos** | Casa, Trabalho e favoritos com ícone: um toque no atalho e a rota já é traçada. Digitar “casa” no destino também funciona. |
+| 🕘 **Frequentes** | O app lembra os destinos usados e sugere os mais frequentes. |
+| 📍 **Histórico** | Cada viagem fica salva com o trajeto percorrido, km, tempo ao volante, velocidade máxima e radares passados (aba Lugares). |
+| ↩ **Volta** | Nas viagens salvas, um toque monta a rota de volta. |
+| ⏯ **Retomar** | Se o app fechar no meio da viagem, ao abrir ele oferece continuar de onde parou. |
+| 🌙 **Mapa noturno** | Mapa escuro automático das 18h às 6h. |
 | 📷 **Modo só radar** | Para o dia a dia: sem rota, só alerta os radares da sua base à frente. |
 | 🟢 **Spotify** | Com a sua autorização, o app toca o Nat King Cole (ou qualquer playlist sua) no Spotify do celular — na abertura e pelo botão 🎵 durante a viagem. |
 | 🎵 **Trilha offline** | Alternativa: seus arquivos de música ficam guardados no celular; a música abaixa sozinha durante os avisos. |
@@ -76,6 +82,7 @@ js/nav.js             motor de navegação (rota fixa, radares, postos, cansaço
 js/routing.js         busca de endereço + rota (OSRM) + instruções em português
 js/pois.js            postos/restaurantes/radares via OpenStreetMap (Overpass)
 js/radars.js          base pessoal de radares + importação/exportação
+js/places.js          lugares fixos, recentes, histórico e retomada
 js/music.js           player offline
 js/spotify.js         autorização e controle do Spotify
 js/voice.js           voz pt-BR e bipes

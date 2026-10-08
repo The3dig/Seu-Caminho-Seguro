@@ -7,6 +7,7 @@ import * as Music from './music.js';
 import * as Voice from './voice.js';
 import * as Spotify from './spotify.js';
 import { Nav } from './nav.js';
+import * as Places from './places.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,6 +27,9 @@ const S = {
   confirmQueue: [],
   confirmTimer: null,
   lastMarked: null,
+  presets: new Map(), // texto do campo → lugar já conhecido (favorito, recente)
+  pick: null, // escolha de ponto no mapa
+  rec: null, // gravador do histórico
 };
 
 // ================= Mapa =================
@@ -39,20 +43,52 @@ const layers = {
   route: L.layerGroup().addTo(map),
   pois: L.layerGroup().addTo(map),
   radars: L.layerGroup().addTo(map),
+  places: L.layerGroup().addTo(map),
+  track: L.layerGroup().addTo(map),
   me: L.layerGroup().addTo(map),
 };
 map.on('dragstart', () => { if (S.nav) S.follow = false; });
 
-// Tocar e segurar no mapa (fora da navegação) coloca um radar ali — útil para testes.
-map.on('contextmenu', async (e) => {
+// Tocar e segurar no mapa (fora da navegação): ir para cá, salvar lugar ou marcar radar.
+let menuPoint = null;
+map.on('contextmenu', (e) => {
   if (S.nav) return;
-  const v = prompt('Adicionar radar neste ponto?\nLimite de velocidade (km/h) — deixe vazio se não souber:', '');
+  menuPoint = { lat: e.latlng.lat, lon: e.latlng.lng };
+  $('#mmWhere').textContent = `📍 ${menuPoint.lat.toFixed(5)}, ${menuPoint.lon.toFixed(5)}`;
+  $('#mapMenu').hidden = false;
+});
+map.on('click', (e) => {
+  if (!S.pick) return;
+  const fn = S.pick;
+  S.pick = null;
+  $('#pickBanner').hidden = true;
+  fn({ lat: e.latlng.lat, lon: e.latlng.lng });
+});
+$('#pickCancel').onclick = () => {
+  const fn = S.pick;
+  S.pick = null;
+  $('#pickBanner').hidden = true;
+  fn?.(null);
+};
+$('#mmCancel').onclick = () => { $('#mapMenu').hidden = true; };
+$('#mapMenu').onclick = (e) => { if (e.target.id === 'mapMenu') $('#mapMenu').hidden = true; };
+$('#mmGo').onclick = () => {
+  $('#mapMenu').hidden = true;
+  goTo({ ...menuPoint, label: `Ponto no mapa (${menuPoint.lat.toFixed(4)}, ${menuPoint.lon.toFixed(4)})` });
+};
+$('#mmSave').onclick = () => {
+  $('#mapMenu').hidden = true;
+  openPlaceEditor({ kind: 'fav', lat: menuPoint.lat, lon: menuPoint.lon });
+};
+$('#mmRadar').onclick = async () => {
+  $('#mapMenu').hidden = true;
+  const v = prompt('Limite de velocidade do radar (km/h) — deixe vazio se não souber:', '');
   if (v === null) return;
-  await Radars.add({ lat: e.latlng.lat, lon: e.latlng.lng, limit: parseInt(v, 10) || null, source: 'meu', note: 'colocado no mapa' });
+  await Radars.add({ lat: menuPoint.lat, lon: menuPoint.lon, limit: parseInt(v, 10) || null, source: 'meu', note: 'colocado no mapa' });
   await drawRadars();
   toast('📷 Radar adicionado.', 2500);
   if (S.trip && $('#tripSummary').innerHTML.trim()) renderSummary(S.trip);
-});
+};
 
 function icon(html, cls = 'mk', size = 24) {
   return L.divIcon({ html: `<div class="${cls}">${html}</div>`, className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
@@ -89,7 +125,7 @@ function drawTrip(trip, fit = true) {
 }
 
 // ================= Navegação entre telas =================
-const views = ['v-intro', 'v-plan', 'v-drive', 'v-radars', 'v-music', 'v-settings'];
+const views = ['v-intro', 'v-plan', 'v-places', 'v-drive', 'v-radars', 'v-music', 'v-settings'];
 function show(id) {
   for (const v of views) $('#' + v).hidden = v !== id;
   document.body.classList.toggle('intro', id === 'v-intro');
@@ -98,7 +134,9 @@ function show(id) {
   if (id === 'v-radars') renderRadarList();
   if (id === 'v-music') renderMusic();
   if (id === 'v-settings') renderSettings();
-  if (id === 'v-plan') $('#walkWarn').hidden = !S.settings.walkTest;
+  if (id === 'v-plan') { $('#walkWarn').hidden = !S.settings.walkTest; renderQuick(); }
+  if (id === 'v-places') renderPlaces();
+  if (id !== 'v-places') layers.track.clearLayers();
   setTimeout(() => map.invalidateSize(), 50);
 }
 for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => show(b.dataset.view);
@@ -367,10 +405,52 @@ $('#btnAddVia').onclick = () => {
 };
 
 async function resolvePlace(text, what) {
+  const preset = S.presets.get(text);
+  if (preset) return preset;
+  const fav = await Places.matchFavorite(text);
+  if (fav) return { lat: fav.lat, lon: fav.lon, label: `${fav.icon} ${fav.name}` };
   const res = await geocode(text);
   if (!res.length) throw new Error(`Não encontrei "${text}" (${what}).`);
-  return res[0];
+  if (res.length === 1) return res[0];
+  return chooseResult(res, what);
 }
+
+// Vários resultados: mostra a lista para o usuário escolher o certo.
+function chooseResult(results, what) {
+  return new Promise((resolve, reject) => {
+    const box = $('#geoResults');
+    box.innerHTML = `<p class="hint">Qual ${what}?</p><ul class="list geo-pick">${results.map((r, i) =>
+      `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label.split(',').slice(1).join(',').trim())}</div></div></li>`).join('')}
+      <li data-i="-1"><div class="grow sub">Nenhum destes — vou digitar de outro jeito</div></li></ul>`;
+    for (const li of box.querySelectorAll('li')) {
+      li.onclick = () => {
+        box.innerHTML = '';
+        const i = +li.dataset.i;
+        if (i < 0) reject(new Error('Busca cancelada. Tente incluir a cidade ou o bairro.'));
+        else resolve(results[i]);
+      };
+    }
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+// Preenche o destino com um lugar conhecido e já traça a rota a partir de onde você está.
+function goTo(place) {
+  const text = place.name ? `${place.icon || '📍'} ${place.name}` : place.label;
+  S.presets.set(text, { lat: place.lat, lon: place.lon, label: text });
+  $('#to').value = text;
+  $('#from').value = '';
+  $('#vias').innerHTML = '';
+  show('v-plan');
+  $('#btnRoute').click();
+}
+
+$('#btnSwap').onclick = () => {
+  const a = $('#from').value, b = $('#to').value;
+  $('#from').value = b;
+  $('#to').value = a;
+  if (!a) toast('Saída = destino anterior. Agora escolha o novo destino (ou toque em 🏠).', 4000);
+};
 
 $('#btnRoute').onclick = async () => {
   const btn = $('#btnRoute');
@@ -391,6 +471,7 @@ $('#btnRoute').onclick = async () => {
     const dest = await resolvePlace(to, 'destino');
     S.points = [from, ...vias, dest];
     S.alts = await route(S.points, { foot: S.settings.walkTest });
+    Places.addRecent(dest).then(renderSuggestions);
     S.altIdx = 0;
     renderAlts();
   } catch (e) {
@@ -544,7 +625,7 @@ async function renderSavedTrips() {
   ul.innerHTML = list.length ? list.map((t) => `
     <li data-id="${t.id}">
       <div class="grow"><div class="title">${esc(t.name)}</div><div class="sub">${fmtDist(t.distance)} · ${fmtDur(t.duration)} · ${new Date(t.created).toLocaleDateString('pt-BR')}</div></div>
-      <button class="btn" data-a="open">Abrir</button><button class="btn" data-a="del">🗑</button>
+      <button class="btn" data-a="open">Abrir</button><button class="btn" data-a="back" title="Rota de volta">↩</button><button class="btn" data-a="del">🗑</button>
     </li>`).join('') : '<p class="hint">Nenhuma viagem salva ainda.</p>';
   for (const li of ul.querySelectorAll('li')) {
     li.querySelector('[data-a=open]').onclick = async () => {
@@ -554,6 +635,19 @@ async function renderSavedTrips() {
       drawTrip(trip);
       await renderSummary(trip);
       $('#tripSummary').scrollIntoView({ behavior: 'smooth' });
+    };
+    li.querySelector('[data-a=back]').onclick = async () => {
+      const trip = await loadTrip(li.dataset.id);
+      const pl = trip.places || [];
+      if (pl.length < 2) return toast('Esta viagem não tem os pontos salvos.');
+      const a = pl[pl.length - 1], b = pl[0];
+      const ta = a.label.split(',')[0], tb = b.label === 'Minha localização' ? 'Ponto de saída da ida' : b.label.split(',')[0];
+      S.presets.set(ta, a);
+      S.presets.set(tb, b);
+      $('#from').value = ta;
+      $('#to').value = tb;
+      $('#vias').innerHTML = '';
+      $('#btnRoute').click();
     };
     li.querySelector('[data-a=del]').onclick = async () => {
       if (!confirm('Apagar esta viagem? (os radares continuam salvos)')) return;
@@ -567,8 +661,14 @@ async function renderSavedTrips() {
 $('#btnFree').onclick = () => startDrive(null, false);
 
 // ================= Dirigindo =================
-async function startDrive(trip, simulate) {
+async function startDrive(trip, simulate, resume = null) {
   Voice.unlock();
+  S.rec = null;
+  if (!simulate && S.settings.recordDrives) {
+    const existing = resume?.driveId ? await Places.loadDrive(resume.driveId) : null;
+    S.rec = new Places.DriveRecorder({ tripId: trip?.id || null, name: trip ? trip.name : 'Só radar', existing });
+    Places.active.set({ tripId: trip?.id || null, driveId: S.rec.id, name: trip ? trip.name : 'Só radar' });
+  }
   S.follow = true;
   S.nav = new Nav({ trip, radars: await Radars.all(), settings: S.settings, ui: { render, askConfirm, toast } });
   drawTrip(trip, false);
@@ -583,6 +683,7 @@ async function startDrive(trip, simulate) {
   if (simulate && trip) startSim(trip);
   else startGps();
   const nR = S.nav.routeRadars.length;
+  if (resume) return Voice.speak('Viagem retomada. A rota continua a mesma.');
   Voice.speak(trip ? `Rota fixa carregada. ${nR === 1 ? "1 radar" : nR + " radares"} no caminho. Boa viagem!` : 'Modo alerta de radar ativado. Boa viagem!');
 }
 
@@ -620,6 +721,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function stopDrive() {
+  if (S.rec) {
+    S.rec.finish().then((kept) => { if (kept) toast('📍 Viagem salva no histórico (aba Lugares).', 3500); });
+    S.rec = null;
+  }
+  Places.active.clear();
+  $('#resumeBox').hidden = true;
   if (S.watchId != null) navigator.geolocation.clearWatch(S.watchId);
   if (S.sim) clearInterval(S.sim);
   S.watchId = S.sim = null;
@@ -639,9 +746,17 @@ $('#btnRecenter').onclick = () => { S.follow = true; if (S.lastFix) map.setView(
 $('#btnDriveMusic').onclick = () => trilhaToggle();
 
 let meMarker = null;
+let lastActiveSave = 0;
 function render(st) {
   const f = st.fix;
   S.lastFix = f;
+  if (S.rec) {
+    S.rec.add(f, st.kmh);
+    if (Date.now() - lastActiveSave > 60000) {
+      lastActiveSave = Date.now();
+      Places.active.set({ tripId: S.nav?.trip?.id || null, driveId: S.rec.id, name: S.rec.d.name });
+    }
+  }
   // velocidade
   $('#spd').textContent = Math.round(st.kmh);
   $('#speedBox').classList.toggle('over', !!st.radar?.over);
@@ -673,6 +788,7 @@ function render(st) {
     $('#turnDist').textContent = fmtDist(st.stepDist);
     $('#turnText').textContent = st.step.text;
   } else if (st.arrived) {
+    if ($('#turnDist').textContent !== 'Chegou!') toast('🏁 Você chegou! Toque ⏹ para encerrar e salvar no histórico.', 10000);
     $('#turnArrow').textContent = '🏁';
     $('#turnDist').textContent = 'Chegou!';
     $('#turnText').textContent = 'Você chegou ao destino';
@@ -701,6 +817,7 @@ function card(k, p, extra = '', far = false) {
 
 // ---------- confirmar radar após passar ----------
 function askConfirm(r) {
+  S.rec?.radarPassed();
   S.confirmQueue.push(r);
   if (S.confirmQueue.length === 1) nextConfirm();
 }
@@ -879,6 +996,8 @@ function renderSettings() {
   $('#sBeep').checked = s.beep;
   $('#sIntroMusic').checked = s.introMusic;
   $('#sWalk').checked = s.walkTest;
+  $('#sNight').value = s.nightMap;
+  $('#sRecord').checked = s.recordDrives;
   $('#sAlert').value = s.alertDist.join(', ');
   $('#sFatigue').value = s.fatigueMin;
   $('#sFuelGap').value = s.fuelGapKm;
@@ -894,6 +1013,9 @@ $('#btnSaveSettings').onclick = async () => {
   s.beep = $('#sBeep').checked;
   s.introMusic = $('#sIntroMusic').checked;
   s.walkTest = $('#sWalk').checked;
+  s.nightMap = $('#sNight').value;
+  s.recordDrives = $('#sRecord').checked;
+  applyNight();
   const ad = $('#sAlert').value.split(/[,; ]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 50 && x <= 3000);
   if (ad.length) s.alertDist = ad.sort((a, b) => b - a);
   s.fatigueMin = Math.max(30, +$('#sFatigue').value || 120);
@@ -905,6 +1027,246 @@ $('#btnSaveSettings').onclick = async () => {
   toast('Ajustes salvos.');
 };
 
+// ================= Lugares, recentes e histórico =================
+async function drawPlaces() {
+  layers.places.clearLayers();
+  for (const p of await Places.favorites()) {
+    L.marker([p.lat, p.lon], { icon: icon(p.icon, 'mk place', 28), zIndexOffset: 500 })
+      .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.label)}`)
+      .addTo(layers.places);
+  }
+}
+
+async function renderQuick() {
+  const favs = await Places.favorites();
+  const home = favs.find((p) => p.kind === 'home');
+  const work = favs.find((p) => p.kind === 'work');
+  const items = [
+    home ? { ...home } : { kind: 'home', icon: '🏠', name: 'Casa', unset: true },
+    work ? { ...work } : { kind: 'work', icon: '💼', name: 'Trabalho', unset: true },
+    ...favs.filter((p) => p.kind === 'fav'),
+  ];
+  const box = $('#quickPlaces');
+  box.innerHTML = items.map((p, i) => `<button class="btn ${p.unset ? 'unset' : ''}" data-i="${i}">${p.icon} ${esc(p.name)}${p.unset ? ' +' : ''}</button>`).join('') +
+    '<button class="btn unset" data-i="new">＋</button>';
+  for (const b of box.querySelectorAll('button')) {
+    b.onclick = () => {
+      if (b.dataset.i === 'new') return openPlaceEditor({ kind: 'fav' });
+      const p = items[+b.dataset.i];
+      if (p.unset) openPlaceEditor({ kind: p.kind });
+      else goTo(p);
+    };
+  }
+  renderSuggestions();
+}
+
+async function renderSuggestions() {
+  const list = await Places.suggestions(6);
+  const box = $('#suggestions');
+  box.innerHTML = list.map((r, i) => `<button class="btn" data-i="${i}">🕘 <span>${esc(r.label.split(',')[0])}</span></button>`).join('');
+  for (const b of box.querySelectorAll('button')) {
+    b.onclick = () => {
+      const r = list[+b.dataset.i];
+      const text = r.label.split(',')[0];
+      S.presets.set(text, { lat: r.lat, lon: r.lon, label: r.label });
+      $('#to').value = text;
+    };
+  }
+}
+
+async function renderPlaces() {
+  const favs = await Places.favorites();
+  const fl = $('#favList');
+  const hasHome = favs.some((p) => p.kind === 'home'), hasWork = favs.some((p) => p.kind === 'work');
+  const rows = [
+    ...(hasHome ? [] : [{ kind: 'home', icon: '🏠', name: 'Casa', unset: true }]),
+    ...(hasWork ? [] : [{ kind: 'work', icon: '💼', name: 'Trabalho', unset: true }]),
+    ...favs,
+  ].sort((a, b) => ({ home: 0, work: 1 }[a.kind] ?? 2) - ({ home: 0, work: 1 }[b.kind] ?? 2));
+  fl.innerHTML = rows.map((p, i) => `
+    <li data-i="${i}">
+      <div class="place-icon">${p.icon}</div>
+      <div class="grow"><div class="title">${esc(p.name)}</div><div class="sub">${p.unset ? 'Toque em ✏️ para definir' : esc(p.label || `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`)}</div></div>
+      ${p.unset ? '' : '<button class="btn" data-a="go">🏁</button>'}<button class="btn" data-a="edit">✏️</button>
+    </li>`).join('');
+  for (const li of fl.querySelectorAll('li')) {
+    const p = rows[+li.dataset.i];
+    li.querySelector('[data-a=go]')?.addEventListener('click', () => goTo(p));
+    li.querySelector('[data-a=edit]').onclick = () => openPlaceEditor(p.unset ? { kind: p.kind } : p);
+  }
+
+  const rec = (await Places.recents()).sort((a, b) => Places.score(b) - Places.score(a));
+  const rl = $('#recentList');
+  rl.innerHTML = rec.length ? rec.slice(0, 20).map((r, i) => `
+    <li data-i="${i}">
+      <div class="place-icon">🕘</div>
+      <div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${r.count}× · última: ${new Date(r.last).toLocaleDateString('pt-BR')}</div></div>
+      <button class="btn" data-a="go">🏁</button><button class="btn" data-a="fav" title="Salvar como lugar">⭐</button><button class="btn" data-a="del">🗑</button>
+    </li>`).join('') : '<p class="hint">Os destinos que você usar aparecem aqui.</p>';
+  for (const li of rl.querySelectorAll('li')) {
+    const r = rec[+li.dataset.i];
+    li.querySelector('[data-a=go]').onclick = () => goTo({ lat: r.lat, lon: r.lon, label: r.label.split(',')[0] });
+    li.querySelector('[data-a=fav]').onclick = () => openPlaceEditor({ kind: 'fav', lat: r.lat, lon: r.lon, label: r.label, name: r.label.split(',')[0] });
+    li.querySelector('[data-a=del]').onclick = async () => { await Places.removeRecent(r.id); renderPlaces(); };
+  }
+
+  const ds = await Places.drives();
+  const km = ds.reduce((a, d) => a + d.distance, 0) / 1000;
+  const hrs = ds.reduce((a, d) => a + d.movingSec, 0);
+  $('#driveStats').innerHTML = `<div><b>${ds.length}</b><small>viagens</small></div><div><b>${Math.round(km).toLocaleString('pt-BR')}</b><small>km rodados</small></div><div><b>${fmtDur(hrs)}</b><small>ao volante</small></div>`;
+  const dl = $('#driveList');
+  dl.innerHTML = ds.length ? ds.map((d, i) => {
+    const dt = new Date(d.start);
+    return `<li data-i="${i}">
+      <div class="grow"><div class="title">${esc(d.name)}</div>
+      <div class="sub">${dt.toLocaleDateString('pt-BR')} ${fmtClock(dt)} · ${fmtDist(d.distance)} · ${fmtDur(d.movingSec)} · máx ${Math.round(d.maxKmh)} km/h${d.radars ? ` · ${d.radars} radar${d.radars > 1 ? 'es' : ''}` : ''}</div></div>
+      <button class="btn" data-a="map">🗺</button><button class="btn" data-a="del">🗑</button>
+    </li>`;
+  }).join('') : '<p class="hint">Suas viagens aparecem aqui com o trajeto percorrido (dá pra desligar em Ajustes).</p>';
+  for (const li of dl.querySelectorAll('li')) {
+    const d = ds[+li.dataset.i];
+    li.querySelector('[data-a=map]').onclick = async () => {
+      const full = await Places.loadDrive(d.id);
+      if (!full?.track?.length) return toast('Trajeto não disponível.');
+      layers.track.clearLayers();
+      const line = L.polyline(full.track, { color: '#e9b44c', weight: 6, opacity: .9 }).addTo(layers.track);
+      L.marker(full.track[0], { icon: icon('🟢') }).addTo(layers.track);
+      L.marker(full.track[full.track.length - 1], { icon: icon('🔴') }).addTo(layers.track);
+      // Mostra o mapa por cima da lista por alguns segundos.
+      $('#v-places').hidden = true;
+      map.invalidateSize();
+      map.fitBounds(line.getBounds(), { padding: [30, 30] });
+      toast(`${d.name} · ${fmtDist(d.distance)} — toque aqui para voltar à lista`, 30000);
+      $('#toast').onclick = () => { $('#toast').hidden = true; $('#toast').onclick = () => { $('#toast').hidden = true; }; show('v-places'); };
+    };
+    li.querySelector('[data-a=del]').onclick = async () => {
+      if (!confirm('Apagar esta viagem do histórico?')) return;
+      await Places.removeDrive(d.id);
+      renderPlaces();
+    };
+  }
+}
+$('#btnAddPlace').onclick = () => openPlaceEditor({ kind: 'fav' });
+$('#btnClearRecents').onclick = async () => { if (confirm('Limpar destinos recentes?')) { await Places.clearRecents(); renderPlaces(); } };
+$('#btnClearDrives').onclick = async () => { if (confirm('Apagar TODO o histórico de viagens?')) { await Places.clearDrives(); renderPlaces(); } };
+
+// ---------- editor de lugar ----------
+let pm = null;
+function openPlaceEditor(p) {
+  const defaults = { home: { name: 'Casa', icon: '🏠' }, work: { name: 'Trabalho', icon: '💼' }, fav: { name: '', icon: '⭐' } }[p.kind || 'fav'];
+  pm = { ...defaults, ...p, name: p.name || defaults.name, icon: p.icon || defaults.icon };
+  $('#pmTitle').textContent = p.id ? 'Editar lugar' : p.kind === 'home' ? 'Definir Casa' : p.kind === 'work' ? 'Definir Trabalho' : 'Novo lugar';
+  $('#pmName').value = pm.name;
+  $('#pmAddr').value = '';
+  $('#pmResults').innerHTML = '';
+  $('#pmDelete').hidden = !p.id;
+  $('#pmIcons').innerHTML = Places.ICONS.map((ic) => `<button data-ic="${ic}" class="${ic === pm.icon ? 'sel' : ''}">${ic}</button>`).join('');
+  for (const b of $('#pmIcons').querySelectorAll('button')) {
+    b.onclick = () => {
+      pm.icon = b.dataset.ic;
+      for (const x of $('#pmIcons').querySelectorAll('button')) x.classList.toggle('sel', x === b);
+    };
+  }
+  pmChosen();
+  $('#placeModal').hidden = false;
+}
+
+function pmChosen() {
+  $('#pmChosen').textContent = pm.lat != null ? `✅ ${pm.label || `${pm.lat.toFixed(5)}, ${pm.lon.toFixed(5)}`}` : 'Nenhum ponto escolhido.';
+}
+
+async function pmSearch() {
+  const q = $('#pmAddr').value.trim();
+  if (!q) return;
+  try {
+    const res = await geocode(q);
+    $('#pmResults').innerHTML = res.length ? res.map((r, i) => `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label)}</div></div></li>`).join('') : '<p class="hint">Nada encontrado. Inclua a cidade.</p>';
+    for (const li of $('#pmResults').querySelectorAll('li')) {
+      li.onclick = () => {
+        const r = res[+li.dataset.i];
+        Object.assign(pm, { lat: r.lat, lon: r.lon, label: r.label });
+        $('#pmResults').innerHTML = '';
+        pmChosen();
+      };
+    }
+  } catch (e) {
+    toast('⚠ ' + e.message);
+  }
+}
+$('#pmSearch').onclick = pmSearch;
+$('#pmAddr').onkeydown = (e) => { if (e.key === 'Enter') pmSearch(); };
+$('#pmHere').onclick = async () => {
+  try {
+    const p = await getPosition({ maximumAge: 5000 });
+    Object.assign(pm, p, { label: 'Onde eu estava ao salvar' });
+    pmChosen();
+  } catch (e) {
+    toast('⚠ ' + e.message);
+  }
+};
+$('#pmMap').onclick = () => {
+  pm.name = $('#pmName').value;
+  $('#placeModal').hidden = true;
+  $('#pickBanner').hidden = false;
+  S.pick = (pt) => {
+    if (pt) Object.assign(pm, pt, { label: 'Escolhido no mapa' });
+    $('#placeModal').hidden = false;
+    pmChosen();
+  };
+};
+$('#pmCancel').onclick = () => { $('#placeModal').hidden = true; };
+$('#pmSave').onclick = async () => {
+  pm.name = $('#pmName').value.trim();
+  if (!pm.name) return toast('Dê um nome ao lugar.');
+  if (pm.lat == null) return toast('Escolha o endereço, sua localização ou um ponto no mapa.');
+  await Places.saveFavorite(pm);
+  $('#placeModal').hidden = true;
+  toast(`${pm.icon} ${pm.name} salvo.`, 2500);
+  drawPlaces();
+  renderQuick();
+  if (!$('#v-places').hidden) renderPlaces();
+};
+$('#pmDelete').onclick = async () => {
+  if (!confirm(`Apagar "${pm.name}"?`)) return;
+  await Places.removeFavorite(pm.id);
+  $('#placeModal').hidden = true;
+  drawPlaces();
+  renderQuick();
+  if (!$('#v-places').hidden) renderPlaces();
+};
+
+// ================= Mapa noturno =================
+function applyNight() {
+  const h = new Date().getHours();
+  const mode = S.settings.nightMap;
+  document.body.classList.toggle('night', mode === 'on' || (mode === 'auto' && (h >= 18 || h < 6)));
+}
+setInterval(() => { if (S.settings) applyNight(); }, 5 * 60000);
+
+$('#btnShowIntro').onclick = () => show('v-intro');
+
+// ================= Retomar viagem interrompida =================
+async function checkResume() {
+  const a = await Places.active.get();
+  if (!a || Date.now() - a.updated > 12 * 3600000) {
+    if (a) Places.active.clear();
+    return;
+  }
+  $('#resumeText').innerHTML = `<b>Viagem em andamento:</b> ${esc(a.name)}<br><small>O app foi fechado durante a navegação.</small>`;
+  $('#resumeBox').hidden = false;
+  $('#btnResume').onclick = async () => {
+    $('#resumeBox').hidden = true;
+    const trip = a.tripId ? await loadTrip(a.tripId) : null;
+    if (a.tripId && !trip) return toast('A viagem salva não existe mais.');
+    S.trip = trip;
+    startDrive(trip, false, a);
+  };
+  $('#btnResumeDrop').onclick = async () => {
+    $('#resumeBox').hidden = true;
+    await Places.active.clear();
+  };
+}
+
 // ================= Início =================
 async function init() {
   S.settings = await getSettings();
@@ -913,8 +1275,11 @@ async function init() {
   greet();
   await Music.load();
   const spAuth = await Spotify.init(S.settings.spotifyClientId);
+  applyNight();
   drawRadars();
+  drawPlaces();
   renderSavedTrips();
+  checkResume();
   if (spAuth) {
     // Voltou da tela de autorização do Spotify.
     show('v-music');
@@ -932,7 +1297,13 @@ async function init() {
       }, { once: true });
     }
   }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) toast('✨ Nova versão instalada. Feche e abra o app para usar (fora de uma viagem).', 10000);
+    });
+  }
 }
 
 init();

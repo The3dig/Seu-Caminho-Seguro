@@ -41,6 +41,14 @@
 
   <!-- ========== PLANEJAR ========== -->
   <section id="v-plan" class="view sheet">
+    <div class="warn resume" id="resumeBox" hidden>
+      <div id="resumeText">Você tem uma viagem em andamento.</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" id="btnResume">▶ Continuar</button>
+        <button class="btn" id="btnResumeDrop">Descartar</button>
+      </div>
+    </div>
+    <div class="quick" id="quickPlaces"></div>
     <h2>Planejar viagem</h2>
     <p class="hint">A rota é definida agora e <b>nunca muda</b> durante a viagem, mesmo com trânsito. Dica: toque e segure no mapa para colocar um radar.</p>
     <p class="warn" id="walkWarn" hidden>🚶 Modo teste a pé ligado (Ajustes): rota para pedestre e avisos em distâncias curtas.</p>
@@ -52,7 +60,11 @@
     <div id="vias"></div>
     <button class="btn link" id="btnAddVia">+ passar obrigatoriamente por… (força o caminho)</button>
     <label>Destino</label>
-    <input id="to" placeholder="Cidade, endereço, coordenadas ou link do Google Maps/Waze" autocomplete="off">
+    <div class="row">
+      <input id="to" placeholder="Cidade, endereço, “casa”, coordenadas ou link do Maps/Waze" autocomplete="off">
+      <button class="btn icon" id="btnSwap" title="Inverter saída e destino">⇅</button>
+    </div>
+    <div class="chips sugg" id="suggestions"></div>
     <button class="btn primary wide" id="btnRoute">Traçar rota</button>
     <div id="geoResults"></div>
     <div id="routeAlts"></div>
@@ -125,6 +137,25 @@
       <p>📷 Radar marcado! Qual o limite?</p>
       <div class="chips" id="limitChips"></div>
       <button class="btn link" id="btnUndoMark">desfazer</button>
+    </div>
+  </section>
+
+  <!-- ========== LUGARES E HISTÓRICO ========== -->
+  <section id="v-places" class="view sheet" hidden>
+    <h2>Meus lugares</h2>
+    <ul class="list" id="favList"></ul>
+    <button class="btn wide" id="btnAddPlace">➕ Novo lugar</button>
+    <p class="hint">Dica: toque e segure em qualquer ponto do mapa para salvar como lugar.</p>
+
+    <h3>Frequentes e recentes</h3>
+    <ul class="list" id="recentList"></ul>
+
+    <h3>Histórico de viagens</h3>
+    <div class="stats" id="driveStats"></div>
+    <ul class="list" id="driveList"></ul>
+    <div class="row wrap">
+      <button class="btn" id="btnClearRecents">Limpar recentes</button>
+      <button class="btn" id="btnClearDrives">Apagar histórico</button>
     </div>
   </section>
 
@@ -219,6 +250,13 @@
     <label class="check"><input type="checkbox" id="sVoice"> Avisos por voz</label>
     <label class="check"><input type="checkbox" id="sBeep"> Bipes e vibração</label>
     <label class="check"><input type="checkbox" id="sIntroMusic"> Tocar música na abertura</label>
+    <label>Mapa escuro (noite)</label>
+    <select id="sNight">
+      <option value="auto">Automático (18h às 6h)</option>
+      <option value="on">Sempre escuro</option>
+      <option value="off">Sempre claro</option>
+    </select>
+    <label class="check"><input type="checkbox" id="sRecord"> Gravar histórico das viagens (trajeto percorrido)</label>
     <label class="check"><input type="checkbox" id="sWalk"> 🚶 Modo teste a pé</label>
     <p class="hint">Para testar andando: rota para pedestre e avisos de radar a 300, 150 e 50 m (no carro: as distâncias abaixo). Desligue antes de viajar de carro.</p>
     <label>Distâncias de aviso de radar (metros)</label>
@@ -230,6 +268,7 @@
     <label>Distância máx. da estrada para postos/restaurantes (metros)</label>
     <input id="sPoiRadius" type="number" min="100" max="2000" step="50">
     <button class="btn primary wide" id="btnSaveSettings">Salvar</button>
+    <button class="btn wide" id="btnShowIntro">🌅 Ver a abertura de novo</button>
     <h3>Mapa offline</h3>
     <p class="hint">Os dados da viagem (rota, manobras, radares, postos) ficam 100% offline. As imagens do mapa ficam guardadas conforme você as visualiza — antes de sair, passe o dedo pela rota no mapa com internet para deixá-las salvas.</p>
     <p class="hint" id="storageInfo"></p>
@@ -237,12 +276,49 @@
   </section>
 
   <nav class="tabs" id="tabs">
-    <button data-view="v-intro">🌅<span>Início</span></button>
     <button data-view="v-plan" class="active">🗺️<span>Viagem</span></button>
+    <button data-view="v-places">📍<span>Lugares</span></button>
     <button data-view="v-radars">📷<span>Radares</span></button>
     <button data-view="v-music">🎵<span>Músicas</span></button>
     <button data-view="v-settings">⚙️<span>Ajustes</span></button>
   </nav>
+
+  <div class="modal" id="placeModal" hidden>
+    <div class="modal-box">
+      <h3 id="pmTitle" style="margin-top:0">Lugar</h3>
+      <label>Nome</label>
+      <input id="pmName" placeholder="Ex.: Casa da mãe">
+      <div class="icons" id="pmIcons"></div>
+      <label>Endereço</label>
+      <div class="row">
+        <input id="pmAddr" placeholder="Rua, número, cidade…" autocomplete="off">
+        <button class="btn icon" id="pmSearch">🔍</button>
+      </div>
+      <ul class="list" id="pmResults"></ul>
+      <div class="row wrap" style="margin-top:8px">
+        <button class="btn" id="pmHere">📍 Onde estou agora</button>
+        <button class="btn" id="pmMap">🗺 Escolher no mapa</button>
+      </div>
+      <p class="sub" id="pmChosen">Nenhum ponto escolhido.</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" id="pmSave" style="flex:1">Salvar</button>
+        <button class="btn" id="pmCancel">Cancelar</button>
+        <button class="btn" id="pmDelete" hidden>🗑</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="mapMenu" hidden>
+    <div class="modal-box">
+      <p class="sub" id="mmWhere" style="margin-top:0"></p>
+      <button class="btn primary wide" id="mmGo">🏁 Ir para cá</button>
+      <button class="btn wide" id="mmSave">⭐ Salvar como lugar</button>
+      <button class="btn wide" id="mmRadar">📷 Adicionar radar aqui</button>
+      <button class="btn link wide" id="mmCancel">Cancelar</button>
+    </div>
+  </div>
+
+  <div class="pick-banner" id="pickBanner" hidden>Toque no mapa para escolher o ponto <button class="btn" id="pickCancel">Cancelar</button></div>
 
   <div class="toast" id="toast" hidden></div>
 
