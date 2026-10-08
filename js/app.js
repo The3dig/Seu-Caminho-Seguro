@@ -129,7 +129,7 @@ function fitVisible(bounds) {
   const plan = $('#v-plan');
   let bottom = 30;
   if (!plan.hidden) bottom = Math.max(30, mapR.bottom - plan.getBoundingClientRect().top + 20);
-  map.fitBounds(bounds, { paddingTopLeft: [30, 30], paddingBottomRight: [30, bottom], maxZoom: 17 });
+  map.fitBounds(bounds, { paddingTopLeft: [30, 30], paddingBottomRight: [30, bottom], maxZoom: 17, animate: false });
 }
 
 function setPlanCollapsed(on) {
@@ -629,6 +629,7 @@ $('#btnRoute').onclick = async () => {
   $('#routeAlts').innerHTML = '';
   $('#prepareBox').hidden = true;
   $('#tripSummary').innerHTML = '';
+  showRouteBar(null);
   try {
     const fromTxt = $('#from').value.trim();
     routeBtn(fromTxt ? '🔎 Procurando a saída… (toque para cancelar)' : '📍 Pegando sua localização… (toque para cancelar)');
@@ -687,7 +688,86 @@ function renderAlts() {
   drawTrip({ pts: sel.pts, pois: [] });
   $('#prepareBox').hidden = false;
   $('#tripName').value = `${shortLabel(S.points[0])} → ${shortLabel(S.points[S.points.length - 1])}`;
+  showRouteBar({ distance: sel.distance, duration: sel.duration, dest: shortLabel(S.points[S.points.length - 1]) });
 }
+
+function tripFromAlt(sel) {
+  return {
+    id: uid(),
+    name: $('#tripName').value.trim() || `${shortLabel(S.points[0])} → ${shortLabel(S.points[S.points.length - 1])}`,
+    created: Date.now(),
+    pts: sel.pts,
+    distance: sel.distance,
+    duration: sel.duration,
+    summary: sel.summary,
+    steps: sel.steps,
+    legs: sel.legs,
+    places: S.points.map((p) => ({ lat: p.lat, lon: p.lon, label: p.label })),
+    pois: [],
+  };
+}
+
+// Baixa postos, radares e limites do caminho. onProgress(0..1).
+async function downloadRouteData(trip, onProgress = () => {}) {
+  const line = makeLine(trip.pts.map(([lat, lon]) => ({ lat, lon })));
+  const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => onProgress(f * 0.7));
+  trip.pois = pois;
+  trip.poisOk = true;
+  await loadLimits(trip, line, (f) => onProgress(0.7 + f * 0.3));
+  const added = await Radars.mergeOSM(radars);
+  await saveTrip(trip);
+  return added;
+}
+
+function clearAlts() {
+  layers.alts.clearLayers();
+  S.alts = [];
+  $('#routeAlts').innerHTML = '';
+  $('#prepareBox').hidden = true;
+}
+
+// Barra fixa "6,6 km · 10 min  ▶ Iniciar" (visível até com o painel abaixado).
+function showRouteBar(info) {
+  const bar = $('#routeBar');
+  bar.hidden = !info;
+  if (!info) return;
+  $('#rbMain').textContent = `${fmtDist(info.distance)} · ${fmtDur(info.duration)}`;
+  $('#rbSub').textContent = `até ${info.dest} · chegada ${fmtClock(new Date(Date.now() + info.duration * 1000))}`;
+}
+
+// ▶ Iniciar: começa na hora; radares/postos/limites chegam em segundo plano.
+$('#btnGo').onclick = async () => {
+  let trip;
+  if (S.alts.length) {
+    trip = tripFromAlt(S.alts[S.altIdx]);
+    await saveTrip(trip);
+    clearAlts();
+    S.trip = trip;
+    renderSavedTrips();
+  } else if (S.trip) {
+    trip = S.trip;
+  } else return;
+  showRouteBar(null);
+  await startDrive(trip, false);
+  if (trip.poisOk) return;
+  try {
+    const added = await downloadRouteData(trip);
+    if (S.nav?.trip === trip) {
+      // Atualiza a navegação em andamento com o que chegou.
+      S.nav.pois = trip.pois;
+      S.nav.limits = trip.speedLimits || [];
+      S.nav.allRadars = await Radars.all();
+      S.nav.routeRadars = S.nav.projectRadars(S.nav.allRadars);
+      drawTrip(trip, false);
+      const n = S.nav.routeRadars.length;
+      if (n) toast(`📷 ${n === 1 ? '1 radar' : n + ' radares'} no caminho${added ? ` (${added} novo${added > 1 ? 's' : ''} do mapa)` : ''}. Alertas ativos.`, 5000);
+      Voice.speak(n ? `${n === 1 ? 'Um radar' : `${n} radares`} no caminho. Alertas ativos.` : 'Nenhum radar conhecido no caminho.', { force: true });
+    }
+  } catch {
+    trip.poisOk = false;
+    toast('⚠ Sem internet para baixar radares do mapa agora — os alertas usam os radares que você já tem.', 7000);
+  }
+};
 
 $('#btnPrepare').onclick = async () => {
   const sel = S.alts[S.altIdx];
@@ -698,25 +778,9 @@ $('#btnPrepare').onclick = async () => {
   btn.textContent = 'Baixando dados da estrada…';
   bar.hidden = false;
   bar.firstElementChild.style.width = '3%';
-  const trip = {
-    id: uid(),
-    name: $('#tripName').value.trim() || 'Viagem',
-    created: Date.now(),
-    pts: sel.pts,
-    distance: sel.distance,
-    duration: sel.duration,
-    summary: sel.summary,
-    steps: sel.steps,
-    places: S.points.map((p) => ({ lat: p.lat, lon: p.lon, label: p.label })),
-    pois: [],
-  };
+  const trip = tripFromAlt(sel);
   try {
-    const line = makeLine(sel.pts.map(([lat, lon]) => ({ lat, lon })));
-    const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => { bar.firstElementChild.style.width = `${Math.round(f * 70)}%`; });
-    trip.pois = pois;
-    trip.poisOk = true;
-    await loadLimits(trip, line, (f) => { bar.firstElementChild.style.width = `${70 + Math.round(f * 30)}%`; });
-    const added = await Radars.mergeOSM(radars);
+    const added = await downloadRouteData(trip, (f) => { bar.firstElementChild.style.width = `${Math.round(f * 100)}%`; });
     if (added) toast(`📷 ${added === 1 ? '1 radar do mapa adicionado' : added + ' radares do mapa adicionados'} à sua base (como “não confirmado”).`, 7000);
   } catch (e) {
     trip.poisOk = false;
@@ -724,13 +788,10 @@ $('#btnPrepare').onclick = async () => {
   }
   await saveTrip(trip);
   S.trip = trip;
-  layers.alts.clearLayers();
-  S.alts = [];
-  $('#routeAlts').innerHTML = '';
-  $('#prepareBox').hidden = true;
+  clearAlts();
   bar.hidden = true;
   btn.disabled = false;
-  btn.textContent = '⬇ Preparar viagem offline';
+  btn.textContent = '⬇ Salvar e preparar para usar sem internet';
   drawTrip(trip);
   drawRadars();
   await renderSummary(trip);
@@ -747,6 +808,7 @@ async function routeRadarCount(trip) {
 }
 
 async function renderSummary(trip) {
+  showRouteBar({ distance: trip.distance, duration: trip.duration, dest: (trip.name.split('→')[1] || trip.name).trim() });
   const pois = trip.pois || [];
   const count = (c) => pois.filter((p) => p.cat === c).length;
   const gaps = fuelGaps(pois, trip.distance);
@@ -895,7 +957,7 @@ function departureSpeech(trip, nR) {
   const eta = new Date(Date.now() + trip.duration * 1000);
   const h = eta.getHours(), m = eta.getMinutes();
   const when = m === 0 ? `às ${h} horas` : `às ${h} e ${m}`;
-  const radars = nR ? ` ${nR === 1 ? 'Um radar' : `${nR} radares`} no caminho.` : ' Nenhum radar conhecido no caminho.';
+  const radars = nR ? ` ${nR === 1 ? 'Um radar' : `${nR} radares`} no caminho.` : trip.poisOk ? ' Nenhum radar conhecido no caminho.' : ' Buscando os radares do caminho.';
   const stops = trip.plan?.days?.length > 1 ? ` A viagem tem ${trip.plan.days.length} dias.` : '';
   return `Saindo agora para ${name}. São ${dist}, chegada prevista ${when}.${radars}${stops} Rota fixa, sem desvios. Boa viagem!`;
 }

@@ -303,3 +303,11 @@ body.picking #map { bottom: 0; }
 /* Digitando: o painel ocupa a tela toda (o teclado come metade dela) */
 #v-plan.sheet.expanded { top: calc(6px + var(--safe-t)); }
 .sheet input { scroll-margin-top: 56px; }
+
+/* Barra fixa com a rota escolhida e o botão Iniciar */
+.route-bar { position: sticky; top: 20px; z-index: 4; display: flex; align-items: center; gap: 10px; background: #0d3a52;
+  border: 1px solid var(--accent); border-radius: 14px; padding: 10px 12px; margin: 0 0 12px; box-shadow: 0 4px 14px #0008; }
+.route-bar b { font-size: 18px; }
+.route-bar .sub { color: #b8d8ea; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 52vw; }
+.route-bar .btn.big { padding: 14px 18px; font-size: 18px; }
+#v-plan.sheet.collapsed { top: calc(100% - var(--tabs-h) - var(--safe-b) - 150px); }

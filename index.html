@@ -42,6 +42,10 @@
   <!-- ========== PLANEJAR ========== -->
   <section id="v-plan" class="view sheet">
     <div class="sheet-handle" id="planHandle" title="Mostrar/ocultar o mapa"><span></span><small id="planHandleText">toque para ver o mapa</small></div>
+    <div class="route-bar" id="routeBar" hidden>
+      <div class="grow"><b id="rbMain"></b><div class="sub" id="rbSub"></div></div>
+      <button class="btn primary big" id="btnGo">▶ Iniciar</button>
+    </div>
     <div class="warn resume" id="resumeBox" hidden>
       <div id="resumeText">Você tem uma viagem em andamento.</div>
       <div class="row" style="margin-top:8px">
@@ -78,9 +82,9 @@
     <div id="prepareBox" hidden>
       <label>Nome da viagem</label>
       <input id="tripName" placeholder="Ex.: Casa → Praia">
-      <button class="btn primary wide" id="btnPrepare">⬇ Preparar viagem offline</button>
+      <button class="btn wide" id="btnPrepare">⬇ Salvar e preparar para usar sem internet</button>
       <div class="progress" id="prepProgress" hidden><div></div></div>
-      <p class="hint">Baixa postos, restaurantes, paradas, hotéis e radares do OpenStreetMap ao longo da rota e salva tudo no celular.</p>
+      <p class="hint">Para o dia a dia basta tocar em <b>▶ Iniciar</b> (radares e postos são baixados sozinhos). Use esta opção em viagens longas, antes de sair, para ter tudo mesmo sem sinal.</p>
     </div>
 
     <div id="tripSummary"></div>
