@@ -21,7 +21,8 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | ⛽ **Postos na estrada** | Próximo posto/restaurante/parada com distância e tempo; destaque para os **24h**; aviso por voz "este foi o último posto pelos próximos X km". |
 | 😴 **Cansaço** | Lembrete de pausa a cada 2 h ao volante (1h30 de madrugada), já dizendo onde fica o próximo posto. Parada de 10 min zera o contador. |
 | 📷 **Modo só radar** | Para o dia a dia: sem rota, só alerta os radares da sua base à frente. |
-| 🎵 **Trilha offline** | Seus arquivos de música ficam guardados no celular; a música abaixa sozinha durante os avisos. |
+| 🟢 **Spotify** | Com a sua autorização, o app toca o Nat King Cole (ou qualquer playlist sua) no Spotify do celular — na abertura e pelo botão 🎵 durante a viagem. |
+| 🎵 **Trilha offline** | Alternativa: seus arquivos de música ficam guardados no celular; a música abaixa sozinha durante os avisos. |
 | 💾 **Backup** | Exporta/importa radares (JSON, CSV, GPX, KML — dá pra importar listas feitas no Google My Maps). |
 
 ## Como colocar no celular
@@ -37,6 +38,17 @@ O app é só um site estático (HTML/JS), sem servidor. O jeito mais fácil é o
 
 Para testar no computador: `python3 -m http.server 8000` na pasta do projeto e abra `http://localhost:8000`.
 
+## Conectar o Spotify (uma vez)
+
+Requer **Spotify Premium** (exigência do Spotify para apps que controlam a música).
+
+1. Abra o app já publicado (endereço do GitHub Pages) → aba 🎵 → **Spotify**. Ali aparece o *Redirect URI* para copiar.
+2. Em [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) → **Create app** → cole o *Redirect URI*, marque **Web API**, salve.
+3. Copie o **Client ID**, cole no app e toque em **Autorizar Spotify**. O Spotify pergunta se você permite → **Concordo**.
+4. Pronto: a trilha padrão é o artista Nat King Cole; dá pra buscar outra playlist ou escolher uma das suas.
+
+Dica: baixe a playlist no app do Spotify para ela tocar nos trechos sem sinal.
+
 ## Antes de viajar (com internet)
 
 1. **Viagem** → digite o destino → **Traçar rota** → escolha a rota → **Preparar viagem offline**.
@@ -48,7 +60,8 @@ Para testar no computador: `python3 -m http.server 8000` na pasta do projeto e a
 ## Limitações honestas
 
 - **Radares do Waze/Google não podem ser importados**: eles não liberam esses dados. A base começa com os radares cadastrados no OpenStreetMap (marcados como "não confirmados") e vai ficando boa conforme você marca e confirma.
-- **As músicas não vêm com o app** (direitos autorais): adicione os seus MP3/M4A do Nat King Cole na aba 🎵. Há atalhos para abrir no YouTube Music/Spotify.
+- **Spotify**: só controla a música com Premium e com internet (o próprio Spotify continua tocando músicas baixadas sem sinal). Se o Spotify não estiver aberto, o app abre ele para você. A voz dos avisos não abaixa o volume do Spotify automaticamente em todos os celulares.
+- **Arquivos próprios**: as músicas não vêm com o app (direitos autorais); adicione seus MP3/M4A na aba 🎵 se quiser algo 100% offline.
 - Postos e restaurantes vêm do OpenStreetMap: na maioria das rodovias brasileiras está bem completo, mas pode faltar algum estabelecimento ou horário.
 - Rotas: servidor público do OSRM; busca de endereços: Nominatim. Ambos gratuitos e para uso leve — perfeito para uso pessoal.
 - Se você sair da rota, o app **avisa mas não recalcula** (de propósito). Para mudar o caminho, prepare uma nova viagem.
@@ -64,6 +77,7 @@ js/routing.js         busca de endereço + rota (OSRM) + instruções em portugu
 js/pois.js            postos/restaurantes/radares via OpenStreetMap (Overpass)
 js/radars.js          base pessoal de radares + importação/exportação
 js/music.js           player offline
+js/spotify.js         autorização e controle do Spotify
 js/voice.js           voz pt-BR e bipes
 js/store.js           armazenamento no celular (IndexedDB)
 sw.js                 funcionamento offline

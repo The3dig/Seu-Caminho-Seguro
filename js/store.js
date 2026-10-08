@@ -50,6 +50,9 @@ export const DEFAULT_SETTINGS = {
   fuelGapKm: 60,
   poiRadius: 400,
   introMusic: true,
+  musicSource: 'spotify', // 'spotify' (se conectado) ou 'local'
+  spotifyClientId: '',
+  spotifyItem: null, // { uri, name, kind, url }
 };
 
 export async function getSettings() {

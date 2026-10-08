@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 6000;
@@ -7,7 +7,7 @@ const MAX_TILES = 6000;
 const SHELL = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
   'js/app.js', 'js/geo.js', 'js/store.js', 'js/routing.js', 'js/pois.js',
-  'js/radars.js', 'js/nav.js', 'js/voice.js', 'js/music.js',
+  'js/radars.js', 'js/nav.js', 'js/voice.js', 'js/music.js', 'js/spotify.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
@@ -52,7 +52,7 @@ self.addEventListener('fetch', (e) => {
   }
 
   // APIs de rota/busca: sempre online (dados ficam salvos no IndexedDB).
-  if (/nominatim|router\.project-osrm|overpass/.test(url.hostname)) return;
+  if (/nominatim|router\.project-osrm|overpass|spotify/.test(url.hostname)) return;
 
   // App: abre na hora pela cópia salva e atualiza em segundo plano
   // (sinal fraco na estrada não trava a abertura).

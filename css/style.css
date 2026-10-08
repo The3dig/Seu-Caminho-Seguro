@@ -178,3 +178,16 @@ body.driving .toast { top: calc(225px + var(--safe-t)); }
 .me { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 0 0 6px #33c3ff44; }
 .me-arrow { width: 0; height: 0; border-left: 11px solid transparent; border-right: 11px solid transparent; border-bottom: 28px solid var(--accent);
   filter: drop-shadow(0 0 2px #000); }
+
+/* Spotify */
+.seg { display: flex; background: var(--panel); border-radius: 12px; padding: 4px; margin: 12px 0; }
+.seg button { flex: 1; border: 0; background: none; padding: 10px; border-radius: 9px; font-size: 14px; }
+.seg button.active { background: var(--panel2); color: var(--accent); font-weight: 700; }
+.steps { padding-left: 20px; font-size: 14px; }
+.steps li { margin: 6px 0; }
+.steps a { color: var(--accent); }
+.copy { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.copy code { flex: 1; background: var(--panel); padding: 8px; border-radius: 8px; font-size: 12px; word-break: break-all; }
+.sp-choice { background: #11402a; color: #b9ffd6; border-radius: 12px; padding: 12px; font-weight: 700; }
+.list li img { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; }
+a.btn.round { color: var(--text); }

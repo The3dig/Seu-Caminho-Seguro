@@ -5,6 +5,7 @@ import { makeLine, locate, pointAt, fmtDist, fmtDur, fmtClock } from './geo.js';
 import * as Radars from './radars.js';
 import * as Music from './music.js';
 import * as Voice from './voice.js';
+import * as Spotify from './spotify.js';
 import { Nav } from './nav.js';
 
 const $ = (s) => document.querySelector(s);
@@ -84,7 +85,7 @@ function show(id) {
   document.body.classList.toggle('driving', id === 'v-drive');
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.view === id);
   if (id === 'v-radars') renderRadarList();
-  if (id === 'v-music') renderTracks();
+  if (id === 'v-music') renderMusic();
   if (id === 'v-settings') renderSettings();
   setTimeout(() => map.invalidateSize(), 50);
 }
@@ -111,25 +112,224 @@ function greet() {
   $('#introHello').textContent = h < 5 ? 'Boa viagem, com calma nesta madrugada' : h < 12 ? 'Bom dia, boa viagem' : h < 18 ? 'Boa tarde, boa viagem' : 'Boa noite, boa viagem';
 }
 
-$('#btnIntroMusic').onclick = async () => {
-  Voice.unlock();
-  if (!Music.tracks().length) {
-    $('#introNoMusic').hidden = false;
-    return;
-  }
-  Music.toggle();
-};
+$('#btnIntroMusic').onclick = () => trilhaToggle();
 $('#btnIntroGo').onclick = () => { Voice.unlock(); show('v-plan'); };
+
+function introHint(text) {
+  const el = $('#introNoMusic');
+  el.textContent = text || '';
+  el.hidden = !text;
+}
 
 Music.onChange((st) => {
   const label = st.track ? `${st.playing ? '♪ ' : '⏸ '}${st.track.name}` : '';
-  $('#introPlaying').textContent = label;
   $('#mNow').textContent = st.track ? label : '—';
   $('#mPlay').textContent = st.playing ? '⏸' : '▶';
-  $('#btnIntroMusic').textContent = st.playing ? '⏸ Pausar a trilha' : '🎷 Tocar a trilha da viagem';
   for (const li of document.querySelectorAll('#trackList li')) li.classList.toggle('playing', li.dataset.id === st.track?.id && st.playing);
+  if (useSpotify()) return;
+  $('#introPlaying').textContent = label;
+  $('#btnIntroMusic').textContent = st.playing ? '⏸ Pausar a trilha' : '🎷 Tocar a trilha da viagem';
 });
 Voice.setDucking({ duck: Music.duck, unduck: Music.unduck });
+
+// ================= Trilha: Spotify ou arquivos do celular =================
+const useSpotify = () => S.settings.musicSource === 'spotify' && Spotify.connected();
+S.sp = { playing: false };
+
+function setSpPlaying(v) {
+  S.sp.playing = v;
+  $('#spPlay').textContent = v ? '⏸' : '▶';
+  if (!useSpotify()) return;
+  const name = S.settings.spotifyItem?.name || 'Spotify';
+  $('#introPlaying').textContent = `${v ? '♪ ' : '⏸ '}${name} · Spotify`;
+  $('#btnIntroMusic').textContent = v ? '⏸ Pausar a trilha' : '🎷 Tocar a trilha da viagem';
+}
+
+// Trilha padrão: o artista Nat King Cole.
+async function spItem() {
+  if (S.settings.spotifyItem) return S.settings.spotifyItem;
+  const { artists } = await Spotify.search('Nat King Cole');
+  const a = artists.find((x) => /nat king cole/i.test(x.name)) || artists[0];
+  if (a) {
+    S.settings.spotifyItem = a;
+    await saveSettings(S.settings);
+    renderSpChoice();
+  }
+  return a;
+}
+
+function spFail(e) {
+  const needApp = e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404 || e.status === 403;
+  toast('🟢 ' + e.message + (needApp ? ' Abrindo o Spotify…' : ''), 7000);
+  if (needApp) window.open(Spotify.openLink(S.settings.spotifyItem), '_blank');
+}
+
+async function spStart({ quiet = false } = {}) {
+  try {
+    await Spotify.play(await spItem());
+    setSpPlaying(true);
+    setTimeout(spRefresh, 1500);
+    return true;
+  } catch (e) {
+    if (quiet) introHint(`Spotify: ${e.message} Depois toque em “Tocar a trilha”.`);
+    else spFail(e);
+    return false;
+  }
+}
+
+async function trilhaToggle() {
+  Voice.unlock();
+  if (useSpotify()) {
+    try {
+      if (S.sp.playing) {
+        await Spotify.pause();
+        setSpPlaying(false);
+        return;
+      }
+      const item = await spItem();
+      const pb = await Spotify.playback().catch(() => null);
+      if (pb?.context?.uri && pb.context.uri === item?.uri) await Spotify.resume();
+      else await Spotify.play(item);
+      setSpPlaying(true);
+      setTimeout(spRefresh, 1500);
+    } catch (e) {
+      spFail(e);
+    }
+    return;
+  }
+  if (!Music.tracks().length) {
+    const msg = 'Nenhuma música configurada. Na aba 🎵 conecte o Spotify ou adicione seus MP3.';
+    introHint(msg);
+    if (S.nav) toast(msg);
+    return;
+  }
+  Music.toggle();
+}
+
+async function spRefresh() {
+  if (!Spotify.connected()) return;
+  try {
+    const pb = await Spotify.playback();
+    setSpPlaying(!!pb?.is_playing);
+    $('#spNow').textContent = pb?.item ? `♪ ${pb.item.name} — ${(pb.item.artists || []).map((a) => a.name).join(', ')}` : '';
+  } catch { /* sem internet: ignora */ }
+}
+
+function renderSpChoice() {
+  const it = S.settings.spotifyItem;
+  $('#spChoice').textContent = it ? `${it.kind === 'artista' ? '🎤' : '📃'} ${it.name}${it.owner ? ' · ' + it.owner : ''}` : '🎤 Nat King Cole (padrão)';
+  $('#spOpen').href = Spotify.openLink(it);
+}
+
+async function renderMusic() {
+  const src = S.settings.musicSource;
+  for (const b of document.querySelectorAll('#srcSeg button')) b.classList.toggle('active', b.dataset.src === src);
+  $('#srcSpotify').hidden = src !== 'spotify';
+  $('#srcLocal').hidden = src !== 'local';
+  renderTracks();
+  const ok = Spotify.connected();
+  $('#spSetup').hidden = ok;
+  $('#spConnected').hidden = !ok;
+  $('#spRedirect').textContent = Spotify.redirectUri();
+  $('#spClientId').value = S.settings.spotifyClientId || '';
+  if (!ok) return;
+  renderSpChoice();
+  spRefresh();
+  if (!S.sp.user) {
+    try {
+      S.sp.user = (await Spotify.me()).display_name || 'você';
+    } catch (e) {
+      S.sp.user = '';
+      if (e.status === 403) toast('🟢 ' + e.message, 7000);
+    }
+  }
+  $('#spUser').textContent = S.sp.user || 'você';
+}
+
+for (const b of document.querySelectorAll('#srcSeg button')) {
+  b.onclick = async () => {
+    if (b.dataset.src === S.settings.musicSource) return;
+    if (b.dataset.src === 'spotify') Music.pause();
+    else if (S.sp.playing) Spotify.pause().then(() => setSpPlaying(false)).catch(() => {});
+    S.settings.musicSource = b.dataset.src;
+    await saveSettings(S.settings);
+    $('#introPlaying').textContent = '';
+    $('#btnIntroMusic').textContent = '🎷 Tocar a trilha da viagem';
+    renderMusic();
+  };
+}
+
+$('#btnCopyRedirect').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(Spotify.redirectUri());
+    toast('Endereço copiado.', 2000);
+  } catch {
+    toast('Copie manualmente: ' + Spotify.redirectUri());
+  }
+};
+
+$('#btnSpConnect').onclick = async () => {
+  const id = $('#spClientId').value.trim();
+  if (!/^[0-9a-f]{32}$/i.test(id)) return toast('O Client ID tem 32 letras/números. Confira se copiou certo.');
+  S.settings.spotifyClientId = id;
+  S.settings.musicSource = 'spotify';
+  await saveSettings(S.settings);
+  Spotify.setClientId(id);
+  try {
+    await Spotify.login(); // vai para o Spotify e volta para o app
+  } catch (e) {
+    toast('⚠ ' + e.message);
+  }
+};
+
+$('#btnSpLogout').onclick = async () => {
+  if (!confirm('Desconectar o Spotify deste app?')) return;
+  await Spotify.logout();
+  S.sp = { playing: false };
+  renderMusic();
+};
+
+function renderSpResults(items) {
+  const ul = $('#spResults');
+  ul.innerHTML = items.map((it, i) => `
+    <li data-i="${i}">
+      ${it.image ? `<img src="${esc(it.image)}" alt="">` : '<span>🎵</span>'}
+      <div class="grow"><div class="title">${esc(it.name)}</div><div class="sub">${it.kind === 'artista' ? 'artista' : 'playlist' + (it.owner ? ' de ' + esc(it.owner) : '')}</div></div>
+      <button class="btn">Usar</button>
+    </li>`).join('') || '<p class="hint">Nada encontrado.</p>';
+  for (const li of ul.querySelectorAll('li')) {
+    li.querySelector('button').onclick = async () => {
+      S.settings.spotifyItem = items[+li.dataset.i];
+      await saveSettings(S.settings);
+      renderSpChoice();
+      ul.innerHTML = '';
+      toast(`🎷 Trilha da viagem: ${S.settings.spotifyItem.name}`, 3000);
+      spStart();
+    };
+  }
+}
+
+$('#btnSpSearch').onclick = async () => {
+  const q = $('#spSearch').value.trim();
+  if (!q) return;
+  try {
+    const { artists, playlists } = await Spotify.search(q);
+    renderSpResults([...artists.slice(0, 3), ...playlists]);
+  } catch (e) {
+    toast('⚠ ' + e.message);
+  }
+};
+$('#spSearch').onkeydown = (e) => { if (e.key === 'Enter') $('#btnSpSearch').click(); };
+$('#btnSpMine').onclick = async () => {
+  try {
+    renderSpResults(await Spotify.myPlaylists());
+  } catch (e) {
+    toast('⚠ ' + e.message);
+  }
+};
+$('#spPlay').onclick = () => trilhaToggle();
+$('#spNext').onclick = () => Spotify.next().then(() => setTimeout(spRefresh, 700)).catch(spFail);
+$('#spPrev').onclick = () => Spotify.prev().then(() => setTimeout(spRefresh, 700)).catch(spFail);
 
 // ================= Planejamento =================
 function getPosition(opts = {}) {
@@ -423,10 +623,7 @@ function stopDrive() {
 
 $('#btnStop').onclick = () => { if (confirm('Encerrar a navegação?')) stopDrive(); };
 $('#btnRecenter').onclick = () => { S.follow = true; if (S.lastFix) map.setView([S.lastFix.lat, S.lastFix.lon], 16); };
-$('#btnDriveMusic').onclick = () => {
-  if (!Music.tracks().length) return toast('Adicione músicas na aba 🎵 antes de viajar.');
-  Music.toggle();
-};
+$('#btnDriveMusic').onclick = () => trilhaToggle();
 
 let meMarker = null;
 function render(st) {
@@ -700,17 +897,25 @@ async function init() {
   applyName();
   greet();
   await Music.load();
-  $('#introNoMusic').hidden = Music.tracks().length > 0;
+  const spAuth = await Spotify.init(S.settings.spotifyClientId);
   drawRadars();
   renderSavedTrips();
-  show('v-intro');
-  // Tenta tocar a trilha na abertura (alguns navegadores só permitem após um toque).
-  if (S.settings.introMusic && Music.tracks().length) {
-    const ok = await Music.play();
-    if (!ok) document.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('#btnIntroMusic')) return;
-      if (!Music.state().playing && !$('#v-intro').hidden) Music.play();
-    }, { once: true });
+  if (spAuth) {
+    // Voltou da tela de autorização do Spotify.
+    show('v-music');
+    toast(spAuth.ok ? '🟢 Spotify conectado! Escolha a trilha ou toque ▶.' : '⚠ Spotify: ' + spAuth.error, 7000);
+  } else {
+    show('v-intro');
+    // Tenta tocar a trilha na abertura (alguns navegadores só permitem após um toque).
+    if (S.settings.introMusic && useSpotify()) {
+      spStart({ quiet: true });
+    } else if (S.settings.introMusic && Music.tracks().length) {
+      const ok = await Music.play();
+      if (!ok) document.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('#btnIntroMusic')) return;
+        if (!Music.state().playing && !$('#v-intro').hidden) Music.play();
+      }, { once: true });
+    }
   }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }

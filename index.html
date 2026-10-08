@@ -35,7 +35,7 @@
         <button class="btn big gold" id="btnIntroMusic">🎷 Tocar a trilha da viagem</button>
         <button class="btn big" id="btnIntroGo">Começar ➜</button>
       </div>
-      <p class="hint" id="introNoMusic" hidden>Ainda não há músicas salvas. Adicione seus MP3 do Nat King Cole na aba 🎵 Músicas para tocarem aqui, mesmo offline.</p>
+      <p class="hint" id="introNoMusic" hidden></p>
     </div>
   </section>
 
@@ -153,22 +153,59 @@
   <!-- ========== MÚSICAS ========== -->
   <section id="v-music" class="view sheet" hidden>
     <h2>Trilha da viagem</h2>
-    <p class="hint">Escolha seus arquivos de música (ex.: Nat King Cole — <i>Unforgettable</i>, <i>L-O-V-E</i>, <i>Route 66</i>…). Eles ficam guardados no celular e tocam offline na abertura e durante a viagem. A música abaixa sozinha quando há um aviso.</p>
-    <label class="btn primary wide file">➕ Adicionar músicas<input type="file" id="musicFiles" accept="audio/*" multiple hidden></label>
-    <div class="player">
-      <button class="btn round" id="mPrev">⏮</button>
-      <button class="btn round big" id="mPlay">▶</button>
-      <button class="btn round" id="mNext">⏭</button>
-      <button class="btn round" id="mShuffle">🔀</button>
+    <div class="seg" id="srcSeg">
+      <button data-src="spotify">🟢 Spotify</button>
+      <button data-src="local">📁 Meus arquivos (offline)</button>
     </div>
-    <p class="now" id="mNow">—</p>
-    <ul class="list" id="trackList"></ul>
-    <h3>Sem os arquivos?</h3>
-    <p class="hint">Dá pra abrir no app de música (precisa de internet ou de playlist baixada lá):</p>
-    <div class="row wrap">
-      <a class="btn" target="_blank" rel="noopener" href="https://music.youtube.com/search?q=Nat+King+Cole">YouTube Music</a>
-      <a class="btn" target="_blank" rel="noopener" href="https://open.spotify.com/search/Nat%20King%20Cole">Spotify</a>
-      <a class="btn" target="_blank" rel="noopener" href="https://music.apple.com/br/search?term=Nat%20King%20Cole">Apple Music</a>
+
+    <!-- ----- Spotify ----- -->
+    <div id="srcSpotify">
+      <div id="spSetup">
+        <p class="hint">O app pede sua autorização no Spotify e passa a tocar e controlar a música no app do Spotify do celular. <b>Precisa de Spotify Premium</b> (regra do Spotify). Configuração única, ~2 min:</p>
+        <ol class="steps">
+          <li>Abra <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> e entre com sua conta Spotify.</li>
+          <li>Toque em <b>Create app</b>. Nome: o que quiser. Em <b>Redirect URI</b> cole exatamente:
+            <div class="copy"><code id="spRedirect"></code><button class="btn" id="btnCopyRedirect">Copiar</button></div></li>
+          <li>Marque <b>Web API</b>, aceite os termos e salve.</li>
+          <li>Copie o <b>Client ID</b> do app e cole aqui:</li>
+        </ol>
+        <input id="spClientId" placeholder="Client ID (32 letras e números)" autocomplete="off" spellcheck="false">
+        <button class="btn primary wide" id="btnSpConnect">🟢 Autorizar Spotify</button>
+      </div>
+      <div id="spConnected" hidden>
+        <p class="sub">Conectado como <b id="spUser">…</b> · <button class="btn link" id="btnSpLogout">desconectar</button></p>
+        <label>Trilha escolhida</label>
+        <div class="sp-choice" id="spChoice">Nat King Cole</div>
+        <div class="player">
+          <button class="btn round" id="spPrev">⏮</button>
+          <button class="btn round big" id="spPlay">▶</button>
+          <button class="btn round" id="spNext">⏭</button>
+          <a class="btn round" id="spOpen" target="_blank" rel="noopener" title="Abrir no Spotify">↗</a>
+        </div>
+        <p class="now" id="spNow"></p>
+        <label>Buscar artista ou playlist</label>
+        <div class="row">
+          <input id="spSearch" value="Nat King Cole">
+          <button class="btn" id="btnSpSearch">🔍</button>
+        </div>
+        <button class="btn link" id="btnSpMine">ou escolher uma das minhas playlists</button>
+        <ul class="list" id="spResults"></ul>
+        <p class="hint">Dica: no app do Spotify, <b>baixe</b> a playlist — assim ela continua tocando nos trechos sem sinal. O controle pelo app (play/pular) precisa de internet; sem sinal, use os botões do próprio Spotify ou da tela de bloqueio.</p>
+      </div>
+    </div>
+
+    <!-- ----- Arquivos locais ----- -->
+    <div id="srcLocal" hidden>
+      <p class="hint">Escolha seus arquivos de música (ex.: Nat King Cole — <i>Unforgettable</i>, <i>L-O-V-E</i>, <i>Route 66</i>…). Eles ficam guardados no celular e tocam <b>offline</b> na abertura e durante a viagem. A música abaixa sozinha quando há um aviso.</p>
+      <label class="btn primary wide file">➕ Adicionar músicas<input type="file" id="musicFiles" accept="audio/*" multiple hidden></label>
+      <div class="player">
+        <button class="btn round" id="mPrev">⏮</button>
+        <button class="btn round big" id="mPlay">▶</button>
+        <button class="btn round" id="mNext">⏭</button>
+        <button class="btn round" id="mShuffle">🔀</button>
+      </div>
+      <p class="now" id="mNow">—</p>
+      <ul class="list" id="trackList"></ul>
     </div>
   </section>
 
