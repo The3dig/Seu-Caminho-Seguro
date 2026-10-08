@@ -136,6 +136,21 @@ function buildRoute(r) {
     distance: r.distance,
     duration: r.duration,
     summary: r.legs.map((l) => l.summary).filter(Boolean).join(' · '),
+    legs: r.legs.map((l) => ({ distance: l.distance, duration: l.duration, summary: l.summary })),
     steps,
   };
+}
+
+// Nome da cidade num ponto (para sugerir onde dormir/parar).
+export async function cityAt(lat, lon) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&accept-language=pt-BR&lat=${lat}&lon=${lon}`);
+    const d = await res.json();
+    const a = d.address || {};
+    const city = a.city || a.town || a.village || a.municipality || a.county || '';
+    const uf = (a['ISO3166-2-lvl4'] || '').replace('BR-', '') || a.state || '';
+    return city ? `${city}${uf ? '/' + uf : ''}` : (d.display_name || '').split(',')[0];
+  } catch {
+    return '';
+  }
 }

@@ -140,6 +140,36 @@
     </div>
   </section>
 
+  <!-- ========== PLANEJAR VIAGEM (ROTEIRO) ========== -->
+  <section id="v-trip" class="view sheet" hidden>
+    <h2>🧭 Planeje sua viagem</h2>
+    <p class="hint">Diga de onde sai, para onde vai e onde quer parar. O app monta o roteiro dia a dia com pausas em postos e restaurantes, onde dormir, pedágios e combustível.</p>
+    <label>Saída</label>
+    <input id="tpFrom" placeholder="Minha localização atual (ou “casa”)" autocomplete="off">
+    <label>Destino</label>
+    <input id="tpTo" placeholder="Cidade ou endereço" autocomplete="off">
+    <label>Cidades onde quer parar (opcional)</label>
+    <div id="tpStops"></div>
+    <button class="btn link" id="tpAddStop">+ adicionar cidade de parada</button>
+    <div class="grid2">
+      <div><label>Saída em</label><input id="tpDepart" type="datetime-local"></div>
+      <div><label>Dirigir no máx. (h/dia)</label><input id="tpMaxH" type="number" min="2" max="16" step="0.5" value="8"></div>
+    </div>
+    <details class="more">
+      <summary>Carro e custos</summary>
+      <div class="grid2">
+        <div><label>Consumo (km/l)</label><input id="tpKmL" type="number" min="3" max="40" step="0.5" value="11"></div>
+        <div><label>Combustível (R$/l)</label><input id="tpFuel" type="number" min="1" max="20" step="0.01" value="6.29"></div>
+        <div><label>Pedágio médio por praça (R$)</label><input id="tpToll" type="number" min="0" max="100" step="0.5" value="12"></div>
+        <div><label>Saída nos dias seguintes</label><input id="tpNextHour" type="number" min="4" max="14" value="8"></div>
+      </div>
+    </details>
+    <button class="btn primary wide" id="tpBuild">🧭 Montar roteiro</button>
+    <p class="hint" id="tpStatus"></p>
+    <div id="tpGeo"></div>
+    <div id="tpResult"></div>
+  </section>
+
   <!-- ========== LUGARES E HISTÓRICO ========== -->
   <section id="v-places" class="view sheet" hidden>
     <h2>Meus lugares</h2>
@@ -163,6 +193,14 @@
   <section id="v-radars" class="view sheet" hidden>
     <h2>Meus radares</h2>
     <div class="stats" id="radarStats"></div>
+    <details class="more" open id="radarHelp">
+      <summary>De onde vêm os radares?</summary>
+      <p class="hint">1️⃣ <b>Do mapa colaborativo (OpenStreetMap)</b>: baixados sozinhos quando você prepara uma viagem, ou no botão abaixo para a sua região.<br>
+      2️⃣ <b>Os que você marca</b>: no carro, 1 toque no botão vermelho <b>📷 + RADAR</b> e pronto (o limite é opcional).<br>
+      Toda vez que você passa num radar o app pergunta “Tinha?”, e assim sua base fica cada vez mais confiável.<br>
+      O Waze e o Google não liberam os radares deles para outros apps.</p>
+    </details>
+    <button class="btn primary wide" id="btnRadarRegion">⬇ Baixar radares da minha região (40 km)</button>
     <div class="row">
       <select id="radarFilter">
         <option value="all">Todos</option>
@@ -174,13 +212,15 @@
       <button class="btn" id="btnRadarMap">🗺 Ver no mapa</button>
     </div>
     <ul class="list" id="radarList"></ul>
-    <h3>Backup / importar</h3>
-    <p class="hint">Importe listas de radares em CSV (lat,lon,limite), GPX ou KML (ex.: exportado do Google My Maps). Faça backup antes de trocar de celular.</p>
+    <details class="more">
+    <summary>Avançado: backup e importar arquivo</summary>
+    <p class="hint">Faça backup antes de trocar de celular. Se alguém te passar uma lista de radares (CSV com lat,lon,limite, GPX ou KML do Google My Maps), dá pra importar aqui.</p>
     <div class="row wrap">
       <label class="btn file">📥 Importar<input type="file" id="radarImport" accept=".json,.csv,.txt,.gpx,.kml" hidden></label>
       <button class="btn" id="btnExportJson">💾 Backup (JSON)</button>
       <button class="btn" id="btnExportCsv">📄 Exportar CSV</button>
     </div>
+    </details>
   </section>
 
   <!-- ========== MÚSICAS ========== -->
@@ -193,7 +233,14 @@
 
     <!-- ----- Spotify ----- -->
     <div id="srcSpotify">
+      <div id="spEasy">
+        <p class="hint"><b>Jeito fácil, sem configurar nada:</b> abre o Nat King Cole no app do Spotify. Dê play lá e volte para cá; a música continua tocando enquanto você navega.</p>
+        <a class="btn primary wide" target="_blank" rel="noopener" href="https://open.spotify.com/search/Nat%20King%20Cole">🟢 Abrir Nat King Cole no Spotify</a>
+      </div>
+      <details class="more" id="spAdvanced">
+        <summary>Controlar o Spotify pelo app (opcional · precisa Premium)</summary>
       <div id="spSetup">
+        <div id="spSteps">
         <p class="hint">O app pede sua autorização no Spotify e passa a tocar e controlar a música no app do Spotify do celular. <b>Precisa de Spotify Premium</b> (regra do Spotify). Configuração única, ~2 min:</p>
         <ol class="steps">
           <li>Abra <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> e entre com sua conta Spotify.</li>
@@ -202,9 +249,11 @@
           <li>Marque <b>Web API</b>, aceite os termos e salve.</li>
           <li>Copie o <b>Client ID</b> do app e cole aqui:</li>
         </ol>
+        </div>
         <input id="spClientId" placeholder="Client ID (32 letras e números)" autocomplete="off" spellcheck="false">
         <button class="btn primary wide" id="btnSpConnect">🟢 Autorizar Spotify</button>
       </div>
+      </details>
       <div id="spConnected" hidden>
         <p class="sub">Conectado como <b id="spUser">…</b> · <button class="btn link" id="btnSpLogout">desconectar</button></p>
         <label>Trilha escolhida</label>
@@ -276,7 +325,8 @@
   </section>
 
   <nav class="tabs" id="tabs">
-    <button data-view="v-plan" class="active">🗺️<span>Viagem</span></button>
+    <button data-view="v-plan" class="active">🗺️<span>Rota</span></button>
+    <button data-view="v-trip">🧭<span>Planejar</span></button>
     <button data-view="v-places">📍<span>Lugares</span></button>
     <button data-view="v-radars">📷<span>Radares</span></button>
     <button data-view="v-music">🎵<span>Músicas</span></button>

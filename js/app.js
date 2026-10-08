@@ -1,6 +1,7 @@
 import { getSettings, saveSettings, listTrips, saveTrip, loadTrip, deleteTrip, uid } from './store.js';
-import { geocode, route } from './routing.js';
-import { fetchAlongRoute, fuelGaps, CATEGORIES } from './pois.js';
+import { geocode, route, cityAt } from './routing.js';
+import { fetchAlongRoute, fuelGaps, CATEGORIES, lodgingNear, radarsNear } from './pois.js';
+import { buildPlan, DEFAULT_PREFS, money } from './planner.js';
 import { makeLine, locate, pointAt, fmtDist, fmtDur, fmtClock } from './geo.js';
 import * as Radars from './radars.js';
 import * as Music from './music.js';
@@ -8,6 +9,7 @@ import * as Voice from './voice.js';
 import * as Spotify from './spotify.js';
 import { Nav } from './nav.js';
 import * as Places from './places.js';
+import { CONFIG } from './config.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -125,7 +127,7 @@ function drawTrip(trip, fit = true) {
 }
 
 // ================= Navegação entre telas =================
-const views = ['v-intro', 'v-plan', 'v-places', 'v-drive', 'v-radars', 'v-music', 'v-settings'];
+const views = ['v-intro', 'v-plan', 'v-trip', 'v-places', 'v-drive', 'v-radars', 'v-music', 'v-settings'];
 function show(id) {
   for (const v of views) $('#' + v).hidden = v !== id;
   document.body.classList.toggle('intro', id === 'v-intro');
@@ -136,6 +138,7 @@ function show(id) {
   if (id === 'v-settings') renderSettings();
   if (id === 'v-plan') { $('#walkWarn').hidden = !S.settings.walkTest; renderQuick(); }
   if (id === 'v-places') renderPlaces();
+  if (id === 'v-trip') initTripForm();
   if (id !== 'v-places') layers.track.clearLayers();
   setTimeout(() => map.invalidateSize(), 50);
 }
@@ -248,9 +251,9 @@ async function trilhaToggle() {
     return;
   }
   if (!Music.tracks().length) {
-    const msg = 'Nenhuma música configurada. Na aba 🎵 conecte o Spotify ou adicione seus MP3.';
-    introHint(msg);
-    if (S.nav) toast(msg);
+    // Sem nada configurado: abre o Nat King Cole direto no app do Spotify.
+    toast('🟢 Abrindo o Spotify… dê play lá e volte para cá.', 6000);
+    window.open('https://open.spotify.com/search/Nat%20King%20Cole', '_blank');
     return;
   }
   Music.toggle();
@@ -278,8 +281,14 @@ async function renderMusic() {
   $('#srcLocal').hidden = src !== 'local';
   renderTracks();
   const ok = Spotify.connected();
-  $('#spSetup').hidden = ok;
+  const fixedId = !!CONFIG.spotifyClientId;
+  $('#spEasy').hidden = ok;
+  $('#spAdvanced').hidden = ok;
   $('#spConnected').hidden = !ok;
+  // Com o Client ID já embutido no app, basta um toque em "Conectar".
+  $('#spSteps').hidden = fixedId;
+  $('#spClientId').hidden = fixedId;
+  $('#btnSpConnect').textContent = fixedId ? '🟢 Conectar Spotify' : '🟢 Autorizar Spotify';
   $('#spRedirect').textContent = Spotify.redirectUri();
   $('#spClientId').value = S.settings.spotifyClientId || '';
   if (!ok) return;
@@ -319,9 +328,9 @@ $('#btnCopyRedirect').onclick = async () => {
 };
 
 $('#btnSpConnect').onclick = async () => {
-  const id = $('#spClientId').value.trim();
+  const id = CONFIG.spotifyClientId || $('#spClientId').value.trim();
   if (!/^[0-9a-f]{32}$/i.test(id)) return toast('O Client ID tem 32 letras/números. Confira se copiou certo.');
-  S.settings.spotifyClientId = id;
+  if (!CONFIG.spotifyClientId) S.settings.spotifyClientId = id;
   S.settings.musicSource = 'spotify';
   await saveSettings(S.settings);
   Spotify.setClientId(id);
@@ -404,7 +413,7 @@ $('#btnAddVia').onclick = () => {
   wrap.querySelector('input').focus();
 };
 
-async function resolvePlace(text, what) {
+async function resolvePlace(text, what, boxSel = '#geoResults') {
   const preset = S.presets.get(text);
   if (preset) return preset;
   const fav = await Places.matchFavorite(text);
@@ -412,13 +421,13 @@ async function resolvePlace(text, what) {
   const res = await geocode(text);
   if (!res.length) throw new Error(`Não encontrei "${text}" (${what}).`);
   if (res.length === 1) return res[0];
-  return chooseResult(res, what);
+  return chooseResult(res, what, boxSel);
 }
 
 // Vários resultados: mostra a lista para o usuário escolher o certo.
-function chooseResult(results, what) {
+function chooseResult(results, what, boxSel = '#geoResults') {
   return new Promise((resolve, reject) => {
-    const box = $('#geoResults');
+    const box = $(boxSel);
     box.innerHTML = `<p class="hint">Qual ${what}?</p><ul class="list geo-pick">${results.map((r, i) =>
       `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label.split(',').slice(1).join(',').trim())}</div></div></li>`).join('')}
       <li data-i="-1"><div class="grow sub">Nenhum destes — vou digitar de outro jeito</div></li></ul>`;
@@ -590,6 +599,7 @@ async function renderSummary(trip) {
       <div class="row wrap" style="margin-top:8px">
         <button class="btn" id="btnSim">🧪 Simular</button>
         <button class="btn" id="btnRefresh">🔄 Atualizar</button>
+        ${trip.plan ? '<button class="btn" id="btnSeePlan">🧭 Roteiro</button>' : ''}
       </div>
       <details style="margin-top:10px"><summary>⛽ Postos na rota (${fuels.length})</summary><ul class="list">${listItems(fuels)}</ul></details>
       <details><summary>🌙 Abertos 24h (${night.length})</summary><ul class="list">${listItems(night)}</ul></details>
@@ -599,6 +609,7 @@ async function renderSummary(trip) {
   $('#btnStart').onclick = () => startDrive(trip, false);
   $('#btnSim').onclick = () => startDrive(trip, true);
   $('#btnRefresh').onclick = () => refreshTrip(trip);
+  if (trip.plan) $('#btnSeePlan').onclick = () => { show('v-trip'); renderPlan(trip); };
 }
 
 async function refreshTrip(trip) {
@@ -798,6 +809,11 @@ function render(st) {
   $('#etaRem').textContent = `${fmtDist(st.remaining)} · ${fmtDur(st.remainingSec)}`;
   // postos e paradas
   const cards = [];
+  if (st.planned) {
+    const pl = st.planned;
+    const ic = pl.kind === 'pernoite' ? '🛏️' : pl.kind === 'almoço' || pl.kind === 'jantar' ? '🍽️' : '☕';
+    cards.push(`<div class="poi far"><div class="k">${ic} Parada planejada</div><div class="v">${fmtDist(pl.d)}</div><div class="n">${esc(pl.name)} · ${fmtDur(pl.sec)}</div></div>`);
+  }
   const nf = st.next.fuel;
   if (nf[0]) {
     const gap = (nf[1]?.along ?? st.total) - nf[0].along;
@@ -930,6 +946,24 @@ async function renderRadarList() {
   }
 }
 $('#radarFilter').onchange = renderRadarList;
+$('#btnRadarRegion').onclick = async () => {
+  const btn = $('#btnRadarRegion');
+  btn.disabled = true;
+  btn.textContent = 'Baixando…';
+  try {
+    const pos = await getPosition();
+    const list = await radarsNear(pos, 40000);
+    const added = await Radars.mergeOSM(list);
+    toast(list.length ? `📷 ${list.length === 1 ? '1 radar' : list.length + ' radares'} no mapa da região, ${added} novo${added === 1 ? '' : 's'} na sua base.` : 'O mapa não tem radares cadastrados perto de você. Marque os que encontrar com o botão vermelho!', 7000);
+    renderRadarList();
+    drawRadars();
+  } catch (e) {
+    toast('⚠ ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬇ Baixar radares da minha região (40 km)';
+  }
+};
 $('#btnRadarMap').onclick = async () => {
   show('v-plan');
   await drawRadars();
@@ -1026,6 +1060,235 @@ $('#btnSaveSettings').onclick = async () => {
   applyName();
   toast('Ajustes salvos.');
 };
+
+// ================= Planejar viagem (roteiro) =================
+let tpInit = false;
+function initTripForm() {
+  if (tpInit) return;
+  tpInit = true;
+  const d = new Date(Date.now() + 30 * 60000);
+  d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+  const pad = (n) => String(n).padStart(2, '0');
+  $('#tpDepart').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const pr = { ...DEFAULT_PREFS, ...(S.settings.tripPrefs || {}) };
+  $('#tpMaxH').value = pr.maxDriveH;
+  $('#tpKmL').value = pr.kmPerL;
+  $('#tpFuel').value = pr.fuelPrice;
+  $('#tpToll').value = pr.tollAvg;
+  $('#tpNextHour').value = pr.nextDayHour;
+}
+
+$('#tpAddStop').onclick = () => {
+  const row = document.createElement('div');
+  row.className = 'stop-row';
+  row.innerHTML = '<input class="tp-stop" placeholder="Cidade (ex.: Registro SP)"><label class="night-toggle"><input type="checkbox" class="tp-night"> 🛏️ dormir</label><button class="btn icon">✕</button>';
+  row.querySelector('button').onclick = () => row.remove();
+  $('#tpStops').append(row);
+  row.querySelector('input').focus();
+};
+
+function tpPrefs() {
+  const num = (sel, def) => { const v = parseFloat($(sel).value.replace(',', '.')); return isFinite(v) && v > 0 ? v : def; };
+  return {
+    maxDriveH: num('#tpMaxH', 8),
+    breakEveryMin: S.settings.fatigueMin,
+    kmPerL: num('#tpKmL', 11),
+    fuelPrice: num('#tpFuel', 6.29),
+    tollAvg: parseFloat($('#tpToll').value.replace(',', '.')) >= 0 ? parseFloat($('#tpToll').value.replace(',', '.')) : 12,
+    nextDayHour: num('#tpNextHour', 8),
+  };
+}
+
+$('#tpBuild').onclick = async () => {
+  const btn = $('#tpBuild');
+  const status = (t) => { $('#tpStatus').textContent = t; };
+  const toTxt = $('#tpTo').value.trim();
+  if (!toTxt) return toast('Informe o destino.');
+  btn.disabled = true;
+  $('#tpResult').innerHTML = '';
+  try {
+    status('🔎 Encontrando os lugares…');
+    const fromTxt = $('#tpFrom').value.trim();
+    const from = fromTxt ? await resolvePlace(fromTxt, 'saída', '#tpGeo') : { ...(await getPosition()), label: 'Minha localização' };
+    const stops = [];
+    for (const row of document.querySelectorAll('#tpStops .stop-row')) {
+      const t = row.querySelector('.tp-stop').value.trim();
+      if (!t) continue;
+      const p = await resolvePlace(t, `parada (${t})`, '#tpGeo');
+      stops.push({ ...p, overnight: row.querySelector('.tp-night').checked });
+    }
+    const dest = await resolvePlace(toTxt, 'destino', '#tpGeo');
+    status('🛣️ Calculando a rota…');
+    const points = [from, ...stops, dest];
+    const sel = (await route(points, { foot: S.settings.walkTest }))[0];
+    Places.addRecent(dest);
+    const trip = {
+      id: uid(),
+      name: `${shortLabel(from)} → ${shortLabel(dest)}`,
+      created: Date.now(),
+      pts: sel.pts, distance: sel.distance, duration: sel.duration, summary: sel.summary,
+      steps: sel.steps, legs: sel.legs,
+      places: points.map((p) => ({ lat: p.lat, lon: p.lon, label: p.label })),
+      stops: stops.map((p) => ({ label: shortLabel(p), overnight: p.overnight, lat: p.lat, lon: p.lon })),
+      pois: [],
+    };
+    status('⛽ Baixando postos, restaurantes, hotéis, pedágios e radares do caminho…');
+    try {
+      const line = makeLine(sel.pts.map(([lat, lon]) => ({ lat, lon })));
+      const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => status(`⛽ Baixando dados da estrada… ${Math.round(f * 100)}%`));
+      trip.pois = pois;
+      trip.poisOk = true;
+      await Radars.mergeOSM(radars);
+    } catch (e) {
+      trip.poisOk = false;
+      toast('⚠ Não consegui baixar os postos agora. O roteiro sai sem sugestões de parada.', 8000);
+    }
+    const prefs = tpPrefs();
+    S.settings.tripPrefs = prefs;
+    saveSettings(S.settings);
+    trip.plan = buildPlan(trip, trip.stops, prefs, new Date($('#tpDepart').value || Date.now()));
+    await saveTrip(trip);
+    S.trip = trip;
+    drawTrip(trip);
+    drawRadars();
+    renderSavedTrips();
+    status('');
+    renderPlan(trip);
+  } catch (e) {
+    status('');
+    toast('⚠ ' + e.message, 8000);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+const fmtDay = (d) => new Date(d).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+const hm = (d) => fmtClock(new Date(d));
+const mapsLink = (lat, lon) => `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+const kmOf = (a) => `km ${Math.round(a / 1000)}`;
+
+function renderPlan(trip) {
+  const plan = trip.plan;
+  const t = plan.totals;
+  const gaps = fuelGaps(trip.pois || [], trip.distance).filter((g) => g.len > S.settings.fuelGapKm * 1000);
+  const warns = [];
+  for (const d of plan.days) if (d.night) warns.push(`🌙 Dia ${d.n}: parte do trajeto cai de madrugada (22h–5h). Considere sair mais cedo ou dormir antes.`);
+  for (const g of gaps) warns.push(`⛽ Trecho de ${fmtDist(g.len)} sem posto (${kmOf(g.from)} → ${kmOf(g.to)}). Abasteça antes.`);
+  if (trip.poisOk === false) warns.push('Postos e restaurantes não foram baixados — as pausas ficaram sem sugestão de lugar.');
+
+  const breakLi = (it) => {
+    const title = it.meal ? `${it.meal === 'almoço' || it.meal === 'jantar' ? '🍽️' : '☕'} Pausa para ${it.meal}` : '☕ Pausa';
+    if (!it.poi) return `<li class="warnli"><span class="t">${hm(it.time)}</span>${title} <span class="sub">${kmOf(it.along)} · sem posto bom por perto — leve água e lanche</span></li>`;
+    const p = it.poi;
+    return `<li><span class="t">${hm(it.time)}</span>${title}: <b>${esc(p.name)}</b>${p.h24 ? ' <span class="tag h24">24h</span>' : ''}
+      <span class="sub">${CATEGORIES[p.cat].icon} ${CATEGORIES[p.cat].label} · ${kmOf(p.along)}${it.food ? ` · 🍽️ ${esc(it.food.name)} ao lado` : ''} · <a href="${mapsLink(p.lat, p.lon)}" target="_blank" rel="noopener">ver</a></span></li>`;
+  };
+
+  const days = plan.days.map((d, di) => {
+    const items = d.items.map((it) => it.type === 'city'
+      ? `<li><span class="t">${hm(it.time)}</span>📍 Passa por <b>${esc(it.label)}</b> <span class="sub">${kmOf(it.along)} · pausa curta</span></li>`
+      : breakLi(it)).join('');
+    const tolls = d.tolls.length ? `<li><span class="t">💰</span>${d.tolls.length} pedágio${d.tolls.length > 1 ? 's' : ''} no dia · ~${money(d.tollCost)}</li>` : '';
+    let end;
+    if (d.end.arrival) end = `<li class="sleep"><span class="t">${hm(d.end.time)}</span>🏁 <b>Chegada ao destino</b></li>`;
+    else {
+      const name = d.end.label || (d.end.poi ? `perto de ${d.end.poi.name}` : 'cidade a definir');
+      end = `<li class="sleep"><span class="t">${hm(d.end.time)}</span>🛏️ <b>Pernoite${d.end.suggested ? ' sugerido' : ''}: <span class="city" data-day="${di}">${esc(name)}</span></b>
+        <span class="sub">${kmOf(d.end.along)}${d.end.suggested ? ' · limite de horas ao volante do dia' : ''}</span>
+        <div class="hotels" id="hotels-${di}"><button class="btn" data-hotels="${di}">🛏️ Ver hospedagens</button></div></li>`;
+    }
+    return `<div class="day"><h4>Dia ${d.n} · ${fmtDay(d.start.time)}</h4>
+      <div class="sub">${fmtDist(d.distance)} · ${fmtDur(d.driveSec)} dirigindo</div>
+      <ul class="tl"><li><span class="t">${hm(d.start.time)}</span>🚗 Saída ${di === 0 ? '' : '(dia seguinte)'}</li>${items}${tolls}${end}</ul></div>`;
+  }).join('');
+
+  $('#tpResult').innerHTML = `
+    <div class="summary">
+      <h3 style="margin-top:0">${esc(trip.name)}</h3>
+      <div class="costs">
+        <div><b>${fmtDist(t.distance)}</b><small>distância</small></div>
+        <div><b>${fmtDur(t.driveSec)}</b><small>dirigindo</small></div>
+        <div><b>${plan.days.length}</b><small>${plan.days.length > 1 ? `dias · ${t.nights} noite${t.nights > 1 ? 's' : ''}` : 'dia'}</small></div>
+        <div><b>${money(t.fuelCost)}</b><small>⛽ ${Math.round(t.liters)} litros</small></div>
+        <div><b>${money(t.tollCost)}</b><small>💰 ${t.plazas} pedágio${t.plazas === 1 ? '' : 's'}*</small></div>
+        <div><b>${money(t.fuelCost + t.tollCost)}</b><small>total estrada</small></div>
+      </div>
+      <p class="hint">* Estimativa: ${t.tollKnown ? `${t.tollKnown} praça(s) com preço do mapa, o resto` : 'cada praça'} pela tarifa média de ${money(plan.prefs.tollAvg)} (ajuste em “Carro e custos”). Pórticos free-flow contam como praça.</p>
+      ${warns.map((w) => `<div class="warn">${w}</div>`).join('')}
+      <button class="btn primary wide" id="tpStart">▶ Iniciar viagem</button>
+      <div class="row wrap" style="margin-top:8px">
+        <button class="btn" id="tpMap">🗺 Ver no mapa</button>
+        <button class="btn" id="tpRecalc">🔄 Recalcular horários</button>
+      </div>
+    </div>
+    ${days}`;
+
+  $('#tpStart').onclick = () => startDrive(trip, false);
+  $('#tpMap').onclick = () => { S.trip = trip; show('v-plan'); drawTrip(trip); renderSummary(trip); };
+  $('#tpRecalc').onclick = async () => {
+    const prefs = tpPrefs();
+    trip.plan = buildPlan(trip, trip.stops || [], prefs, new Date($('#tpDepart').value || Date.now()));
+    await saveTrip(trip);
+    renderPlan(trip);
+    toast('Horários e custos recalculados (a rota é a mesma).', 3000);
+  };
+  for (const b of $('#tpResult').querySelectorAll('[data-hotels]')) b.onclick = () => showHotels(trip, +b.dataset.hotels);
+  nameSuggestedCities(trip);
+  $('#tpResult').scrollIntoView({ behavior: 'smooth' });
+}
+
+// Descobre o nome da cidade dos pernoites sugeridos (uma consulta por vez).
+async function nameSuggestedCities(trip) {
+  let changed = false;
+  for (const [di, d] of trip.plan.days.entries()) {
+    if (d.end.arrival || d.end.label) continue;
+    const line = makeLine(trip.pts.map(([lat, lon]) => ({ lat, lon })));
+    const pt = pointAt(line, d.end.along);
+    d.end.pt = { lat: pt.lat, lon: pt.lon };
+    const city = await cityAt(pt.lat, pt.lon);
+    if (city) {
+      d.end.label = city;
+      changed = true;
+      const el = document.querySelector(`.city[data-day="${di}"]`);
+      if (el) el.textContent = city;
+    }
+    await new Promise((r) => setTimeout(r, 1100)); // respeita o limite do serviço
+  }
+  if (changed) saveTrip(trip);
+}
+
+async function showHotels(trip, di) {
+  const d = trip.plan.days[di];
+  const box = $(`#hotels-${di}`);
+  let pt = d.end.pt;
+  if (!pt) {
+    const stop = (trip.stops || []).find((s) => s.overnight && s.label === d.end.label);
+    if (stop) pt = { lat: stop.lat, lon: stop.lon };
+    else {
+      const p = pointAt(makeLine(trip.pts.map(([lat, lon]) => ({ lat, lon }))), d.end.along);
+      pt = { lat: p.lat, lon: p.lon };
+    }
+  }
+  box.innerHTML = '<p class="hint">Procurando hospedagens…</p>';
+  const city = d.end.label || '';
+  const checkin = new Date(d.end.time);
+  const checkout = new Date(checkin.getTime() + 86400000);
+  const iso = (x) => x.toISOString().slice(0, 10);
+  const links = `<div class="links">
+    <a class="btn" target="_blank" rel="noopener" href="https://www.booking.com/searchresults.pt-br.html?ss=${encodeURIComponent(city || `${pt.lat},${pt.lon}`)}&checkin=${iso(checkin)}&checkout=${iso(checkout)}&group_adults=2">Booking</a>
+    <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/hot%C3%A9is/@${pt.lat},${pt.lon},13z">Google Maps</a>
+    <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/search?q=${encodeURIComponent('hotel ' + (city || ''))}">Pesquisar</a></div>`;
+  try {
+    const list = await lodgingNear(pt, 6000);
+    box.innerHTML = (list.length ? `<ul class="list">${list.map((h) => `
+      <li><div class="grow"><div class="title">${esc(h.name)}${h.stars ? ' ' + '★'.repeat(Math.min(5, h.stars)) : ''}</div>
+      <div class="sub">${h.kind} · ${fmtDist(h.d)}${h.phone ? ` · <a href="tel:${esc(h.phone)}">${esc(h.phone)}</a>` : ''}</div></div>
+      <a class="btn" target="_blank" rel="noopener" href="${h.site ? esc(h.site) : mapsLink(h.lat, h.lon)}">ver</a></li>`).join('')}</ul>`
+      : '<p class="hint">O mapa não tem hospedagens cadastradas aqui. Veja nos sites:</p>') + links;
+  } catch {
+    box.innerHTML = '<p class="hint">Sem internet para buscar agora. Veja nos sites:</p>' + links;
+  }
+}
 
 // ================= Lugares, recentes e histórico =================
 async function drawPlaces() {
@@ -1274,7 +1537,7 @@ async function init() {
   applyName();
   greet();
   await Music.load();
-  const spAuth = await Spotify.init(S.settings.spotifyClientId);
+  const spAuth = await Spotify.init(S.settings.spotifyClientId || CONFIG.spotifyClientId);
   applyNight();
   drawRadars();
   drawPlaces();

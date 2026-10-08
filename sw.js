@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 6000;
@@ -7,7 +7,7 @@ const MAX_TILES = 6000;
 const SHELL = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
   'js/app.js', 'js/geo.js', 'js/store.js', 'js/routing.js', 'js/pois.js',
-  'js/radars.js', 'js/nav.js', 'js/voice.js', 'js/music.js', 'js/spotify.js', 'js/places.js',
+  'js/radars.js', 'js/nav.js', 'js/voice.js', 'js/music.js', 'js/spotify.js', 'js/places.js', 'js/planner.js', 'js/config.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',

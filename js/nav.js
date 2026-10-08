@@ -10,6 +10,7 @@ function sayDist(m) {
 }
 import { isActive } from './radars.js';
 import { speak, beep } from './voice.js';
+import { plannedStops } from './planner.js';
 
 const OFF_ROUTE_M = 80;
 const RADAR_ON_ROUTE_M = 45;
@@ -27,6 +28,8 @@ export class Nav {
     this.routeRadars = this.line ? this.projectRadars(radars) : [];
     this.pois = trip?.pois || [];
     this.steps = trip?.steps || [];
+    this.planned = trip?.plan ? plannedStops(trip.plan) : [];
+    this.plannedSpoken = new Map();
     this.progress = 0;
     this.hint = 0;
     this.offCount = 0;
@@ -178,6 +181,19 @@ export class Nav {
     }
     state.next = next;
     this.fuelWarnings(p);
+
+    // Paradas do roteiro planejado
+    const ps = this.planned.find((x) => x.along > p - 100);
+    if (ps) {
+      const d = ps.along - p;
+      state.planned = { ...ps, d, sec: d / avg };
+      const lvl = d <= 1200 ? 2 : d <= 5500 ? 1 : 0;
+      if (lvl > (this.plannedSpoken.get(ps.along) || 0)) {
+        this.plannedSpoken.set(ps.along, lvl);
+        const why = ps.kind === 'pernoite' ? 'Pernoite planejado' : ps.kind === 'pausa' ? 'Pausa planejada' : `Parada para ${ps.kind}`;
+        speak(`${why} em ${sayDist(d)}: ${ps.name}.`);
+      }
+    }
   }
 
   alertRadar(r, d, kmh) {
