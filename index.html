@@ -41,6 +41,7 @@
 
   <!-- ========== PLANEJAR ========== -->
   <section id="v-plan" class="view sheet">
+    <div class="sheet-handle" id="planHandle" title="Mostrar/ocultar o mapa"><span></span><small id="planHandleText">toque para ver o mapa</small></div>
     <div class="warn resume" id="resumeBox" hidden>
       <div id="resumeText">Você tem uma viagem em andamento.</div>
       <div class="row" style="margin-top:8px">
@@ -413,12 +414,16 @@
         <input id="pmAddr" placeholder="Rua, número, cidade…" autocomplete="off">
         <button class="btn icon" id="pmSearch">🔍</button>
       </div>
+      <p class="warn" id="pmNotExact" hidden></p>
       <ul class="list" id="pmResults"></ul>
+      <label>Número / complemento (opcional)</label>
+      <input id="pmNum" placeholder="Ex.: 123, casa 2">
       <div class="row wrap" style="margin-top:8px">
         <button class="btn" id="pmHere">📍 Onde estou agora</button>
         <button class="btn" id="pmMap">🗺 Escolher no mapa</button>
       </div>
       <p class="sub" id="pmChosen">Nenhum ponto escolhido.</p>
+      <button class="btn wide" id="pmAdjust" hidden>🎯 Ajustar o ponto exato no mapa (a porta de casa)</button>
       <div class="row" style="margin-top:12px">
         <button class="btn primary" id="pmSave" style="flex:1">Salvar</button>
         <button class="btn" id="pmCancel">Cancelar</button>
@@ -450,7 +455,13 @@
     </div>
   </div>
 
-  <div class="pick-banner" id="pickBanner" hidden>Toque no mapa para escolher o ponto <button class="btn" id="pickCancel">Cancelar</button></div>
+  <div class="pick-banner" id="pickBanner" hidden>
+    <div id="pickText">Toque no mapa no ponto exato</div>
+    <div class="row">
+      <button class="btn" id="pickCancel">Cancelar</button>
+      <button class="btn ok" id="pickOk" disabled>✅ Confirmar</button>
+    </div>
+  </div>
 
   <div class="toast" id="toast" hidden></div>
 

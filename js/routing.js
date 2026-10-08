@@ -75,12 +75,14 @@ export async function geocode(text, near = null) {
   const [a, b] = await Promise.allSettled([nominatim(text, near), photon(text, near)]);
   if (a.status === 'rejected' && b.status === 'rejected') throw a.reason;
   const all = [...(a.value || []), ...(b.value || [])];
-  const words = norm(text).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  // Números (da casa) não contam: o mapa quase nunca tem o número.
+  const words = norm(text).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w));
   const out = [];
   for (const r of all) {
     if (out.some((o) => km(o, r) < 0.15)) continue; // mesmo lugar nas duas fontes
     const L = norm(r.label);
     r.score = words.filter((w) => L.includes(w)).length;
+    r.full = r.score === words.length; // achou todas as palavras digitadas?
     r.km = near ? km(near, r) : null;
     out.push(r);
   }

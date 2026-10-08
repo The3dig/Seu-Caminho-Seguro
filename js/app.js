@@ -60,19 +60,48 @@ map.on('contextmenu', (e) => {
   $('#mmWhere').textContent = `📍 ${menuPoint.lat.toFixed(5)}, ${menuPoint.lon.toFixed(5)}`;
   $('#mapMenu').hidden = false;
 });
+let pickMarker = null;
+let pickPt = null;
 map.on('click', (e) => {
   if (!S.pick) return;
-  const fn = S.pick;
-  S.pick = null;
-  $('#pickBanner').hidden = true;
-  fn({ lat: e.latlng.lat, lon: e.latlng.lng });
+  pickPt = { lat: e.latlng.lat, lon: e.latlng.lng };
+  if (!pickMarker) pickMarker = L.marker(e.latlng, { draggable: true, zIndexOffset: 2000 }).on('dragend', () => { const ll = pickMarker.getLatLng(); pickPt = { lat: ll.lat, lon: ll.lng }; });
+  pickMarker.setLatLng(e.latlng).addTo(map);
+  $('#pickOk').disabled = false;
 });
-$('#pickCancel').onclick = () => {
+function endPick(pt) {
   const fn = S.pick;
   S.pick = null;
+  document.body.classList.remove('picking');
   $('#pickBanner').hidden = true;
-  fn?.(null);
-};
+  if (pickMarker) pickMarker.remove();
+  setTimeout(() => map.invalidateSize(), 50);
+  fn?.(pt);
+}
+// Escolha de ponto em tela cheia, já com zoom de rua, para achar a porta de casa.
+function pickOnMap({ center, text = 'Toque no mapa no ponto exato (dá pra arrastar o alfinete)' } = {}) {
+  return new Promise((resolve) => {
+    S.pick = resolve;
+    pickPt = null;
+    $('#pickText').textContent = text;
+    $('#pickOk').disabled = true;
+    $('#toast').hidden = true;
+    document.body.classList.add('picking');
+    $('#pickBanner').hidden = false;
+    setTimeout(() => {
+      map.invalidateSize();
+      if (center) {
+        map.setView([center.lat, center.lon], 18);
+        pickPt = { lat: center.lat, lon: center.lon };
+        if (!pickMarker) pickMarker = L.marker([center.lat, center.lon], { draggable: true, zIndexOffset: 2000 }).on('dragend', () => { const ll = pickMarker.getLatLng(); pickPt = { lat: ll.lat, lon: ll.lng }; });
+        pickMarker.setLatLng([center.lat, center.lon]).addTo(map);
+        $('#pickOk').disabled = false;
+      }
+    }, 80);
+  });
+}
+$('#pickCancel').onclick = () => endPick(null);
+$('#pickOk').onclick = () => endPick(pickPt);
 $('#mmCancel').onclick = () => { $('#mapMenu').hidden = true; };
 $('#mapMenu').onclick = (e) => { if (e.target.id === 'mapMenu') $('#mapMenu').hidden = true; };
 $('#mmGo').onclick = () => {
@@ -92,6 +121,28 @@ $('#mmRadar').onclick = async () => {
   toast('📷 Radar adicionado.', 2500);
   if (S.trip && $('#tripSummary').innerHTML.trim()) renderSummary(S.trip);
 };
+
+// Enquadra no pedaço do mapa que não está coberto pelo painel de baixo.
+function fitVisible(bounds) {
+  const mapR = $('#map').getBoundingClientRect();
+  const plan = $('#v-plan');
+  let bottom = 30;
+  if (!plan.hidden) bottom = Math.max(30, mapR.bottom - plan.getBoundingClientRect().top + 20);
+  map.fitBounds(bounds, { paddingTopLeft: [30, 30], paddingBottomRight: [30, bottom], maxZoom: 17 });
+}
+
+function setPlanCollapsed(on) {
+  const plan = $('#v-plan');
+  plan.classList.toggle('collapsed', on);
+  if (on) plan.scrollTop = 0;
+  $('#planHandleText').textContent = on ? 'toque para voltar às opções' : 'toque para ver o mapa';
+  setTimeout(() => {
+    map.invalidateSize();
+    const l = layers.route.getLayers()[0];
+    if (l?.getBounds) fitVisible(l.getBounds());
+  }, 280);
+}
+$('#planHandle').onclick = () => setPlanCollapsed(!$('#v-plan').classList.contains('collapsed'));
 
 function icon(html, cls = 'mk', size = 24) {
   return L.divIcon({ html: `<div class="${cls}">${html}</div>`, className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
@@ -124,7 +175,7 @@ function drawTrip(trip, fit = true) {
       .bindPopup(`<b>${esc(p.name)}</b><br>${c.label}${p.h24 ? ' · 24h' : ''}<br>km ${(p.along / 1000).toFixed(0)} da rota${p.hours && !p.h24 ? '<br>' + esc(p.hours) : ''}`)
       .addTo(layers.pois);
   }
-  if (fit) map.fitBounds(line.getBounds(), { padding: [30, 30] });
+  if (fit) fitVisible(line.getBounds());
 }
 
 // ================= Navegação entre telas =================
@@ -138,6 +189,7 @@ function show(id) {
   if (id === 'v-music') renderMusic();
   if (id === 'v-settings') renderSettings();
   if (id === 'v-plan') {
+    $('#v-plan').classList.remove('collapsed');
     $('#walkWarn').hidden = !S.settings.walkTest;
     renderQuick();
     if (!$('#from').value && (!S.here || Date.now() - S.here.t > 60000)) locateMe({ center: !S.trip });
@@ -623,7 +675,8 @@ function renderAlts() {
       <div class="hint">via ${esc(a.summary || '—')}</div>
     </div>`).join('') +
     (S.alts.length > 1 ? '<p class="hint">Toque para escolher. Quer outro caminho? Use “passar obrigatoriamente por”.</p>' : '');
-  for (const el of box.querySelectorAll('.alt')) el.onclick = () => { S.altIdx = +el.dataset.i; renderAlts(); };
+  // Tocar numa opção: escolhe e abaixa o painel para mostrar a rota no mapa.
+  for (const el of box.querySelectorAll('.alt')) el.onclick = () => { S.altIdx = +el.dataset.i; renderAlts(); setPlanCollapsed(true); };
   layers.alts.clearLayers();
   S.alts.forEach((a, i) => {
     if (i === S.altIdx) return;
@@ -1629,6 +1682,8 @@ function openPlaceEditor(p) {
   $('#pmTitle').textContent = p.id ? 'Editar lugar' : p.kind === 'home' ? 'Definir Casa' : p.kind === 'work' ? 'Definir Trabalho' : 'Novo lugar';
   $('#pmName').value = pm.name;
   $('#pmAddr').value = '';
+  $('#pmNum').value = pm.num || '';
+  $('#pmNotExact').hidden = true;
   $('#pmResults').innerHTML = '';
   $('#pmDelete').hidden = !p.id;
   $('#pmIcons').innerHTML = Places.ICONS.map((ic) => `<button data-ic="${ic}" class="${ic === pm.icon ? 'sel' : ''}">${ic}</button>`).join('');
@@ -1644,6 +1699,21 @@ function openPlaceEditor(p) {
 
 function pmChosen() {
   $('#pmChosen').textContent = pm.lat != null ? `✅ ${pm.label || `${pm.lat.toFixed(5)}, ${pm.lon.toFixed(5)}`}` : 'Nenhum ponto escolhido.';
+  $('#pmAdjust').hidden = pm.lat == null;
+}
+
+async function pmPick(center) {
+  pm.name = $('#pmName').value;
+  $('#placeModal').hidden = true;
+  const pt = await pickOnMap({ center, text: `Toque no ponto exato de “${pm.name || 'seu lugar'}” (ou arraste o alfinete) e confirme` });
+  $('#placeModal').hidden = false;
+  if (!pt) return;
+  Object.assign(pm, pt, { label: 'Ponto marcado no mapa' });
+  pmChosen();
+  try {
+    const addr = await addressAt(pt.lat, pt.lon);
+    if (addr) { pm.label = `${addr} (marcado no mapa)`; pmChosen(); }
+  } catch { /* sem internet: fica sem o nome da rua */ }
 }
 
 async function pmSearch() {
@@ -1651,13 +1721,17 @@ async function pmSearch() {
   if (!q) return;
   try {
     const res = await geocode(q, S.here);
-    $('#pmResults').innerHTML = res.length ? res.map((r, i) => `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label)}</div></div></li>`).join('') : '<p class="hint">Nada encontrado. Inclua a cidade.</p>';
+    $('#pmNotExact').hidden = !res.length || res.some((r) => r.full);
+    $('#pmNotExact').textContent = '⚠ Não achei exatamente esse endereço — o mapa gratuito não tem todas as ruas e quase nunca tem o número das casas. Escolha a opção mais perto e depois toque em “🎯 Ajustar o ponto exato no mapa”.';
+    $('#pmResults').innerHTML = res.length ? res.map((r, i) => `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label)}</div></div>${r.km != null ? `<span class="tag">${r.km < 10 ? r.km.toFixed(1).replace('.', ',') : Math.round(r.km)} km</span>` : ''}</li>`).join('') : '<p class="hint">Nada encontrado. Inclua a cidade, ou use “Onde estou agora” / “Escolher no mapa”.</p>';
     for (const li of $('#pmResults').querySelectorAll('li')) {
       li.onclick = () => {
         const r = res[+li.dataset.i];
         Object.assign(pm, { lat: r.lat, lon: r.lon, label: r.label });
         $('#pmResults').innerHTML = '';
+        $('#pmNotExact').hidden = true;
         pmChosen();
+        toast('Dica: toque em “🎯 Ajustar o ponto exato” para marcar a porta certinha.', 4000);
       };
     }
   } catch (e) {
@@ -1675,19 +1749,13 @@ $('#pmHere').onclick = async () => {
     toast('⚠ ' + e.message);
   }
 };
-$('#pmMap').onclick = () => {
-  pm.name = $('#pmName').value;
-  $('#placeModal').hidden = true;
-  $('#pickBanner').hidden = false;
-  S.pick = (pt) => {
-    if (pt) Object.assign(pm, pt, { label: 'Escolhido no mapa' });
-    $('#placeModal').hidden = false;
-    pmChosen();
-  };
-};
+$('#pmMap').onclick = () => pmPick(pm.lat != null ? pm : S.here || null);
+$('#pmAdjust').onclick = () => pmPick(pm);
 $('#pmCancel').onclick = () => { $('#placeModal').hidden = true; };
 $('#pmSave').onclick = async () => {
   pm.name = $('#pmName').value.trim();
+  pm.num = $('#pmNum').value.trim();
+  if (pm.num && pm.label && !pm.label.includes(`nº ${pm.num}`)) pm.label = `${pm.label.replace(/ · nº .*$/, '')} · nº ${pm.num}`;
   if (!pm.name) return toast('Dê um nome ao lugar.');
   if (pm.lat == null) return toast('Escolha o endereço, sua localização ou um ponto no mapa.');
   await Places.saveFavorite(pm);
