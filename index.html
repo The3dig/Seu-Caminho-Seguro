@@ -407,9 +407,15 @@
     <div class="modal-box">
       <h3 id="pmTitle" style="margin-top:0">Lugar</h3>
       <label>Nome</label>
-      <input id="pmName" placeholder="Ex.: Casa da mãe">
+      <input id="pmName" placeholder="Ex.: Casa da praia, Casa da mãe">
+      <div class="seg" id="pmKind">
+        <button data-k="home">🏠 Casa principal</button>
+        <button data-k="work">💼 Trabalho</button>
+        <button data-k="fav">⭐ Outro lugar</button>
+      </div>
       <div class="icons" id="pmIcons"></div>
-      <label>Endereço</label>
+      <p class="sub" id="pmCurrent" hidden></p>
+      <label id="pmAddrLabel">Endereço</label>
       <div class="row">
         <input id="pmAddr" placeholder="Rua, número, cidade…" autocomplete="off">
         <button class="btn icon" id="pmSearch">🔍</button>
@@ -427,7 +433,7 @@
       <div class="row" style="margin-top:12px">
         <button class="btn primary" id="pmSave" style="flex:1">Salvar</button>
         <button class="btn" id="pmCancel">Cancelar</button>
-        <button class="btn" id="pmDelete" hidden>🗑</button>
+        <button class="btn" id="pmDelete" hidden>🗑 Apagar</button>
       </div>
     </div>
   </div>

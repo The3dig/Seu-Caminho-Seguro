@@ -17,8 +17,12 @@ export async function getKind(kind) {
 // kind: 'home' | 'work' | 'fav'. Casa e trabalho são únicos.
 export async function saveFavorite(p) {
   let list = await favorites();
-  if (p.kind === 'home' || p.kind === 'work') list = list.filter((x) => x.kind !== p.kind || x.id === p.id);
-  const item = { id: p.id || uid(), kind: p.kind || 'fav', name: p.name, icon: p.icon, lat: p.lat, lon: p.lon, label: p.label || '' };
+  // Só pode haver uma Casa principal e um Trabalho: o anterior vira um lugar
+  // comum (não é apagado).
+  if (p.kind === 'home' || p.kind === 'work') {
+    for (const x of list) if (x.kind === p.kind && x.id !== p.id) x.kind = 'fav';
+  }
+  const item = { id: p.id || uid(), kind: p.kind || 'fav', name: p.name, icon: p.icon, lat: p.lat, lon: p.lon, label: p.label || '', num: p.num || '' };
   const i = list.findIndex((x) => x.id === item.id);
   if (i >= 0) list[i] = item;
   else list.push(item);

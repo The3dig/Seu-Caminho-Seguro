@@ -10,6 +10,7 @@ import * as Spotify from './spotify.js';
 import { Nav } from './nav.js';
 import * as Places from './places.js';
 import { CONFIG } from './config.js';
+import { searchPlaces } from './search.js';
 import * as Cities from './cities.js';
 
 const $ = (s) => document.querySelector(s);
@@ -534,8 +535,8 @@ async function resolvePlace(text, what, boxSel = '#geoResults') {
   if (preset) return preset;
   const fav = await Places.matchFavorite(text);
   if (fav) return { lat: fav.lat, lon: fav.lon, label: `${fav.icon} ${fav.name}` };
-  const res = await geocode(text, S.here);
-  if (!res.length) throw new Error(`Não encontrei "${text}" (${what}).`);
+  const res = await searchPlaces(text, S.here);
+  if (!res.length) throw new Error(`Não encontrei "${text}" (${what}). Tente só o tipo de lugar (ex.: “UPA”, “posto”) para ver os mais perto, inclua o bairro, ou toque e segure no mapa no ponto.`);
   if (res.length === 1) return res[0];
   return chooseResult(res, what, boxSel);
 }
@@ -1564,10 +1565,17 @@ async function renderQuick() {
   ];
   const box = $('#quickPlaces');
   box.innerHTML = items.map((p, i) => `<button class="btn ${p.unset ? 'unset' : ''}" data-i="${i}">${p.icon} ${esc(p.name)}${p.unset ? ' +' : ''}</button>`).join('') +
-    '<button class="btn unset" data-i="new">＋</button>';
+    '<button class="btn unset" data-i="new">＋ Novo</button><button class="btn unset" data-i="edit">✏️ Editar</button>';
   for (const b of box.querySelectorAll('button')) {
+    // Tocar e segurar num atalho abre a edição (trocar endereço, apagar).
+    let timer = null, long = false;
+    b.onpointerdown = () => { long = false; timer = setTimeout(() => { long = true; const p = items[+b.dataset.i]; if (p) openPlaceEditor(p.unset ? { kind: p.kind } : p); }, 600); };
+    b.onpointerup = b.onpointerleave = b.onpointercancel = () => clearTimeout(timer);
+    b.oncontextmenu = (e) => e.preventDefault();
     b.onclick = () => {
+      if (long) return;
       if (b.dataset.i === 'new') return openPlaceEditor({ kind: 'fav' });
+      if (b.dataset.i === 'edit') return show('v-places');
       const p = items[+b.dataset.i];
       if (p.unset) openPlaceEditor({ kind: p.kind });
       else goTo(p);
@@ -1679,8 +1687,24 @@ let pm = null;
 function openPlaceEditor(p) {
   const defaults = { home: { name: 'Casa', icon: '🏠' }, work: { name: 'Trabalho', icon: '💼' }, fav: { name: '', icon: '⭐' } }[p.kind || 'fav'];
   pm = { ...defaults, ...p, name: p.name || defaults.name, icon: p.icon || defaults.icon };
-  $('#pmTitle').textContent = p.id ? 'Editar lugar' : p.kind === 'home' ? 'Definir Casa' : p.kind === 'work' ? 'Definir Trabalho' : 'Novo lugar';
+  $('#pmTitle').textContent = p.id ? `Editar “${pm.name}”` : p.kind === 'home' ? 'Definir Casa' : p.kind === 'work' ? 'Definir Trabalho' : 'Novo lugar';
   $('#pmName').value = pm.name;
+  pm.kind = pm.kind || 'fav';
+  for (const b of $('#pmKind').querySelectorAll('button')) {
+    b.classList.toggle('active', b.dataset.k === pm.kind);
+    b.onclick = () => {
+      pm.kind = b.dataset.k;
+      // Ícone acompanha o tipo, se ainda for o padrão.
+      if (['⭐', '🏠', '💼'].includes(pm.icon)) {
+        pm.icon = { home: '🏠', work: '💼', fav: '⭐' }[pm.kind];
+        for (const x of $('#pmIcons').querySelectorAll('button')) x.classList.toggle('sel', x.dataset.ic === pm.icon);
+      }
+      for (const x of $('#pmKind').querySelectorAll('button')) x.classList.toggle('active', x === b);
+    };
+  }
+  $('#pmCurrent').hidden = !p.id;
+  if (p.id) $('#pmCurrent').innerHTML = `📍 Endereço atual: <b>${esc(pm.label || `${pm.lat.toFixed(5)}, ${pm.lon.toFixed(5)}`)}</b><br>Para trocar, busque o novo endereço abaixo ou use “Onde estou agora”.`;
+  $('#pmAddrLabel').textContent = p.id ? 'Novo endereço (só se quiser trocar)' : 'Endereço';
   $('#pmAddr').value = '';
   $('#pmNum').value = pm.num || '';
   $('#pmNotExact').hidden = true;
@@ -1720,7 +1744,7 @@ async function pmSearch() {
   const q = $('#pmAddr').value.trim();
   if (!q) return;
   try {
-    const res = await geocode(q, S.here);
+    const res = await searchPlaces(q, S.here);
     $('#pmNotExact').hidden = !res.length || res.some((r) => r.full);
     $('#pmNotExact').textContent = '⚠ Não achei exatamente esse endereço — o mapa gratuito não tem todas as ruas e quase nunca tem o número das casas. Escolha a opção mais perto e depois toque em “🎯 Ajustar o ponto exato no mapa”.';
     $('#pmResults').innerHTML = res.length ? res.map((r, i) => `<li data-i="${i}"><div class="grow"><div class="title">${esc(r.label.split(',')[0])}</div><div class="sub">${esc(r.label)}</div></div>${r.km != null ? `<span class="tag">${r.km < 10 ? r.km.toFixed(1).replace('.', ',') : Math.round(r.km)} km</span>` : ''}</li>`).join('') : '<p class="hint">Nada encontrado. Inclua a cidade, ou use “Onde estou agora” / “Escolher no mapa”.</p>';
@@ -1743,8 +1767,12 @@ $('#pmAddr').onkeydown = (e) => { if (e.key === 'Enter') pmSearch(); };
 $('#pmHere').onclick = async () => {
   try {
     const p = await getPosition({ maximumAge: 5000 });
-    Object.assign(pm, p, { label: 'Onde eu estava ao salvar' });
+    Object.assign(pm, p, { label: 'Onde você está agora' });
     pmChosen();
+    try {
+      const addr = await addressAt(p.lat, p.lon);
+      if (addr) { pm.label = addr; pmChosen(); }
+    } catch { /* sem internet: fica sem o nome da rua */ }
   } catch (e) {
     toast('⚠ ' + e.message);
   }
@@ -1766,7 +1794,7 @@ $('#pmSave').onclick = async () => {
   if (!$('#v-places').hidden) renderPlaces();
 };
 $('#pmDelete').onclick = async () => {
-  if (!confirm(`Apagar "${pm.name}"?`)) return;
+  if (!confirm(`Apagar “${pm.name}” dos seus lugares?`)) return;
   await Places.removeFavorite(pm.id);
   $('#placeModal').hidden = true;
   drawPlaces();
