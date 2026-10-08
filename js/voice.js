@@ -3,6 +3,7 @@ let settings = { voice: true, beep: true };
 let audioCtx = null;
 let duckHandler = { duck() {}, unduck() {} };
 let ptVoice = null;
+let gaveUp = false;
 
 export function configure(s) { settings = s; pickVoice(); }
 export function setDucking(h) { duckHandler = h; }
@@ -54,10 +55,11 @@ export function speak(text, { urgent = false, force = false, tries = 0 } = {}) {
   // Vozes ainda não carregaram (iPhone)? Espera um pouco para não sair com
   // sotaque de Portugal. Alerta urgente (radar) fala na hora mesmo assim.
   if (!ptVoice) pickVoice();
-  if (!ptVoice && !urgent && tries < 4 && !voices().length) {
+  if (!ptVoice && !urgent && !gaveUp && tries < 4 && !voices().length) {
     setTimeout(() => speak(text, { urgent, force, tries: tries + 1 }), 750);
     return;
   }
+  if (tries >= 4) gaveUp = true; // aparelho sem vozes listadas: não espera de novo
   if (urgent) speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = ptVoice?.lang?.replace('_', '-') || 'pt-BR';
