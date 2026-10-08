@@ -24,7 +24,7 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | 💰 **Pedágio (estimativa)** | Conta as praças e pórticos free-flow do OpenStreetMap na rota; usa o preço do mapa quando existe e, senão, a tarifa média que você informar. |
 | 🅿️ **Paradas fora do plano** | Divergir do roteiro é normal: se você acabou de parar, a pausa planejada seguinte vira “opcional” e fica em silêncio. Parou 2 min? O app pergunta o motivo com botões grandes (😴 sono/lavar o rosto, 🚻, ☕, 🍽️, ⛽…) — ou toque ☕ na tela para registrar. “Sono” zera o contador de cansaço. Fica tudo no histórico da viagem. |
 | 🏙️ **Cidades que conheço** | Diário automático das cidades por onde você passou e onde parou, com relatório por estado, mapa e compartilhamento. Funciona offline (descobre os nomes quando voltar a internet). |
-| 🚦 **Limite da via** | Placa com o limite do trecho (dados do OpenStreetMap, baixados com a viagem) e aviso único quando você passa >10% dele. Radar sem limite cadastrado usa o da via. |
+| 🚦 **Limite da via** | Placa com o limite do trecho (dados do OpenStreetMap, baixados com a viagem). **Avisa antes das reduções** (“o limite cai para 90 em 700 metros”, ~40 s antes) e, se você entrar no trecho acima do limite, avisa na hora. Fora isso, aviso único quando você passa >10%. Radar sem limite cadastrado usa o da via. |
 | ⛽ **Detalhes do lugar** | Toque no card de um posto/restaurante (ou na lista do resumo): horário, 24h, telefone, distância, ver no mapa e Google Maps. |
 | 💾 **Backup e exportação** | Backup completo para trocar de celular; histórico em planilha (CSV) e cada trajeto em GPX. |
 | 🏠 **Lugares fixos** | Casa, Trabalho e favoritos com ícone: um toque no atalho e a rota já é traçada. Digitar “casa” no destino também funciona. |

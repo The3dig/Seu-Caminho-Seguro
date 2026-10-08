@@ -34,6 +34,9 @@ export class Nav {
     this.limits = trip?.speedLimits || [];
     this.overSince = 0;
     this.overWarned = false;
+    this.dropSpoken = new Set(); // reduções de limite já avisadas
+    this.lastLimit = null;
+    this.dropAt = null;
     this.lastStopEnd = 0; // fim da última parada (para silenciar pausa planejada)
     this.progress = 0;
     this.hint = 0;
@@ -191,14 +194,43 @@ export class Nav {
     // Limite de velocidade da via (dados do mapa)
     const roadLimit = this.offRoute ? null : limitAt(this.limits, p);
     state.roadLimit = roadLimit;
+    const warnOn = this.settings.speedWarn !== false;
+    const known = roadLimit || (p - (this.lastLimitAt ?? -1e9) < 2000 ? this.lastLimit : null);
+    if (roadLimit) {
+      // Acabou de entrar num trecho com limite menor (ex.: 110 → 90)?
+      if (this.lastLimit && roadLimit < this.lastLimit) this.dropAt = p;
+      this.lastLimit = roadLimit;
+      this.lastLimitAt = p;
+    }
+
+    // Olha à frente: redução de limite nos próximos ~40 s (mín. 800 m).
+    if (known && !this.offRoute) {
+      const look = Math.max(800, (kmh / 3.6) * 40);
+      const next = this.limits.find(([a]) => a > p);
+      if (next && next[0] - p <= look && next[2] < known && next[1] - next[0] >= 300) {
+        const d = next[0] - p;
+        state.limitDrop = { limit: next[2], d };
+        if (warnOn && !this.dropSpoken.has(next[0]) && !state.radar) {
+          this.dropSpoken.add(next[0]);
+          if (kmh > next[2] + 3) {
+            beep({ times: 2, freq: 900, dur: 0.12 });
+            speak(`Atenção: o limite cai para ${next[2]} em ${sayDist(d)}.`);
+          }
+        }
+      }
+    }
+
     if (roadLimit && kmh > roadLimit * 1.1 + 2) {
       state.overRoad = true;
       if (!this.overSince) this.overSince = Date.now();
-      // Avisa uma vez por excesso (só depois de 4 s acima, sem ficar repetindo).
-      if (!this.overWarned && Date.now() - this.overSince > 4000 && this.settings.speedWarn !== false && !state.radar) {
+      // Avisa uma vez por excesso. Logo depois de uma redução, avisa na hora;
+      // no resto, só depois de 4 s acima (sem ficar repetindo).
+      const justDropped = this.dropAt != null && p - this.dropAt < 400;
+      const waited = Date.now() - this.overSince > 4000;
+      if (!this.overWarned && (justDropped || waited) && warnOn && !state.radar) {
         this.overWarned = true;
-        beep({ times: 1, freq: 1200, dur: 0.12 });
-        speak(`Limite ${roadLimit}.`);
+        beep({ times: justDropped ? 2 : 1, freq: 1200, dur: 0.12 });
+        speak(justDropped ? `Reduza! Limite ${roadLimit}.` : `Limite ${roadLimit}.`, { urgent: justDropped });
       }
     } else if (!roadLimit || kmh < roadLimit + 2) {
       this.overSince = 0;

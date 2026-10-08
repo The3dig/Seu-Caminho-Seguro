@@ -792,6 +792,8 @@ function render(st) {
   $('#speedBox').classList.toggle('over', !!(st.radar?.over || st.overRoad));
   $('#limitSign').hidden = !st.roadLimit;
   if (st.roadLimit) $('#limitVal').textContent = st.roadLimit;
+  $('#limitNext').hidden = !st.limitDrop;
+  if (st.limitDrop) $('#limitNext').textContent = `↓${st.limitDrop.limit} · ${fmtDist(st.limitDrop.d)}`;
   // posição
   const rot = f.heading != null && st.kmh > 3;
   const html = rot ? `<div class="me-arrow" style="transform:rotate(${f.heading}deg)"></div>` : '<div class="me"></div>';
