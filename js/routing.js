@@ -52,7 +52,7 @@ async function nominatim(text, near) {
 }
 
 // Photon (OpenStreetMap, komoot): melhor para "UPA Caraguatatuba", "posto X em Y".
-async function photon(text, near) {
+export async function photon(text, near) {
   const bias = near ? `&lat=${near.lat}&lon=${near.lon}` : '';
   const res = await fetchT(`https://photon.komoot.io/api/?limit=10${bias}&q=${encodeURIComponent(text)}`, {}, 12000);
   if (!res.ok) throw new Error('photon ' + res.status);

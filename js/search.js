@@ -2,7 +2,7 @@
 // "posto Registro", "farmácia". Primeiro tenta os buscadores de endereço;
 // se não acharem exatamente, separa "o quê" de "onde" e procura no mapa
 // (OpenStreetMap) pelo tipo de lugar e por sinônimos, dentro da cidade.
-import { geocode, fetchT } from './routing.js';
+import { geocode, fetchT, photon } from './routing.js';
 
 const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 const km = (a, b) => {
@@ -119,4 +119,39 @@ export async function searchPlaces(text, near = null) {
   for (const r of base) if (!merged.some((m) => km(m, r) < 0.15)) merged.push(r);
   if (!merged.length && baseErr) throw baseErr;
   return merged.slice(0, 8);
+}
+
+// Sugestões enquanto digita (como no Waze): rápidas, perto de você primeiro.
+// Usa o Photon (feito para isso) e, para palavras como "upa", "posto",
+// "farmácia", também procura esse tipo de lugar ao seu redor.
+const sugCache = new Map();
+export async function suggestPlaces(text, near = null) {
+  const q = norm(text);
+  if (q.length < 2) return [];
+  const key = `${q}|${near ? `${near.lat.toFixed(2)},${near.lon.toFixed(2)}` : ''}`;
+  if (sugCache.has(key)) return sugCache.get(key);
+  const words = q.split(/\s+/).filter(Boolean);
+  const tasks = [photon(text, near)];
+  if (near && words.length === 1 && KINDS.some((k) => k.rx.test(words[0]))) tasks.push(poiSearch(text, near));
+  const res = await Promise.allSettled(tasks);
+  if (res.every((r) => r.status === 'rejected')) throw res[0].reason;
+  const all = res.flatMap((r) => r.value || []);
+  const out = [];
+  for (const r of all) {
+    if (out.some((o) => km(o, r) < 0.15)) continue;
+    const name = norm(r.label.split(',')[0]);
+    const full = norm(r.label);
+    const syn = KINDS.find((k) => k.rx.test(words[0]))?.name;
+    r.rank = words.every((w) => name.includes(w)) ? 3 : syn && new RegExp(syn).test(name) ? 2 : words.every((w) => full.includes(w)) ? 1 : 0;
+    r.km = near ? km(near, r) : null;
+    out.push(r);
+  }
+  // Como no Waze: entre os que batem com o que você digitou (nome ou
+  // sinônimo), o mais perto primeiro; os muito longe (>80 km) vão pro fim.
+  const tier = (r) => (r.rank >= 2 ? 2 : r.rank) - (r.km != null && r.km > 80 ? 3 : 0);
+  out.sort((a, b) => tier(b) - tier(a) || (a.km ?? 0) - (b.km ?? 0));
+  const top = out.slice(0, 7);
+  sugCache.set(key, top);
+  if (sugCache.size > 100) sugCache.delete(sugCache.keys().next().value);
+  return top;
 }

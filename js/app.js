@@ -10,7 +10,7 @@ import * as Spotify from './spotify.js';
 import { Nav } from './nav.js';
 import * as Places from './places.js';
 import { CONFIG } from './config.js';
-import { searchPlaces } from './search.js';
+import { searchPlaces, suggestPlaces } from './search.js';
 import * as Cities from './cities.js';
 
 const $ = (s) => document.querySelector(s);
@@ -2086,6 +2086,86 @@ $('#restoreFile').onchange = async (e) => {
     toast('⚠ Arquivo inválido: ' + err.message);
   }
 };
+
+// ================= Sugestões enquanto digita =================
+const fmtKm = (k) => (k == null ? '' : k < 10 ? `${k.toFixed(1).replace('.', ',')} km` : `${Math.round(k)} km`);
+function attachSuggest(inputSel, onPick) {
+  const inp = $(inputSel);
+  const box = document.createElement('ul');
+  box.className = 'list suggest';
+  box.hidden = true;
+  (inp.closest('.row') || inp).after(box);
+  let timer = null, seq = 0;
+  inp.addEventListener('focus', () => {
+    // Sobe o campo para o teclado não cobrir as sugestões.
+    setTimeout(() => inp.scrollIntoView({ block: 'start', behavior: 'smooth' }), 250);
+    if (box.childElementCount && inp.value.trim().length >= 3) box.hidden = false;
+  });
+  inp.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 300));
+  inp.addEventListener('input', () => {
+    clearTimeout(timer);
+    const t = inp.value.trim();
+    if (t.length < 3 || /^-?\d+[.,]\d+/.test(t) || /^https?:/i.test(t)) { box.hidden = true; return; }
+    timer = setTimeout(async () => {
+      const my = ++seq;
+      box.hidden = false;
+      box.innerHTML = '<li class="sub">🔎 procurando…</li>';
+      let list = [];
+      try { list = await suggestPlaces(t, S.here); } catch { /* sem internet */ }
+      if (my !== seq || inp.value.trim() !== t) return;
+      if (!list.length) {
+        box.innerHTML = '<li class="sub">Nenhuma sugestão ainda — continue digitando ou toque no botão para buscar.</li>';
+        return;
+      }
+      // Sobe o campo para o topo: as sugestões ficam acima do teclado.
+      inp.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      box.innerHTML = list.map((r, i) => {
+        const [name, ...rest] = r.label.split(',');
+        return `<li data-i="${i}"><span class="pin">📍</span><div class="grow"><div class="title">${esc(name)}</div><div class="sub">${esc(rest.join(',').trim())}</div></div><span class="km">${fmtKm(r.km)}</span></li>`;
+      }).join('');
+      for (const li of box.querySelectorAll('li[data-i]')) {
+        li.onclick = () => {
+          box.hidden = true;
+          seq++;
+          onPick(list[+li.dataset.i]);
+        };
+      }
+    }, 450);
+  });
+}
+
+// Enquanto digita no painel da rota, ele sobe para a tela toda.
+$('#v-plan').addEventListener('focusin', (e) => { if (e.target.matches('input')) $('#v-plan').classList.add('expanded'); });
+$('#v-plan').addEventListener('focusout', () => setTimeout(() => {
+  if (!$('#v-plan').contains(document.activeElement) || !document.activeElement.matches('input')) $('#v-plan').classList.remove('expanded');
+}, 350));
+
+// Destino: tocou na sugestão, já traça a rota (como no Waze).
+attachSuggest('#to', (r) => {
+  const text = r.label.split(',')[0].trim();
+  S.presets.set(text, { lat: r.lat, lon: r.lon, label: r.label });
+  $('#to').value = text;
+  $('#to').blur();
+  $('#btnRoute').click();
+});
+attachSuggest('#from', (r) => {
+  const text = r.label.split(',')[0].trim();
+  S.presets.set(text, { lat: r.lat, lon: r.lon, label: r.label });
+  setFrom(text);
+});
+attachSuggest('#tpTo', (r) => {
+  const text = r.label.split(',')[0].trim();
+  S.presets.set(text, { lat: r.lat, lon: r.lon, label: r.label });
+  $('#tpTo').value = text;
+});
+attachSuggest('#pmAddr', (r) => {
+  Object.assign(pm, { lat: r.lat, lon: r.lon, label: r.label });
+  $('#pmAddr').value = r.label.split(',')[0];
+  $('#pmResults').innerHTML = '';
+  $('#pmNotExact').hidden = true;
+  pmChosen();
+  toast('Dica: toque em “🎯 Ajustar o ponto exato” para marcar a porta certinha.', 4000);
+});
 
 // ================= Mapa noturno =================
 function applyNight() {
