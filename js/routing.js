@@ -4,6 +4,8 @@ import { makeLine, locate, simplify } from './geo.js';
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const OSRM = 'https://router.project-osrm.org/route/v1/driving/';
+// Rota para pedestre (usada no modo teste a pé). Servidor do OpenStreetMap Alemanha.
+const OSRM_FOOT = 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/';
 
 // Aceita "lat, lon", links do Google Maps (@lat,lon / q=lat,lon / !3dlat!4dlon) ou texto.
 export function parseCoords(text) {
@@ -82,11 +84,20 @@ function relevant(s) {
   return true;
 }
 
-export async function route(points) {
+export async function route(points, { foot = false } = {}) {
   const coords = points.map((p) => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
   const alt = points.length === 2 ? 'true' : 'false';
-  const url = `${OSRM}${coords}?overview=full&geometries=geojson&steps=true&alternatives=${alt}`;
-  const res = await fetch(url);
+  const qs = `${coords}?overview=full&geometries=geojson&steps=true&alternatives=${alt}`;
+  let res;
+  if (foot) {
+    try {
+      res = await fetch(OSRM_FOOT + qs);
+      if (!res.ok) res = null;
+    } catch {
+      res = null; // cai para a rota de carro
+    }
+  }
+  if (!res) res = await fetch(OSRM + qs);
   if (!res.ok) throw new Error('Falha ao calcular rota (' + res.status + ')');
   const data = await res.json();
   if (data.code !== 'Ok') throw new Error('Rota não encontrada: ' + (data.message || data.code));

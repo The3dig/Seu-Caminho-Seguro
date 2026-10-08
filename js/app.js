@@ -43,6 +43,17 @@ const layers = {
 };
 map.on('dragstart', () => { if (S.nav) S.follow = false; });
 
+// Tocar e segurar no mapa (fora da navegação) coloca um radar ali — útil para testes.
+map.on('contextmenu', async (e) => {
+  if (S.nav) return;
+  const v = prompt('Adicionar radar neste ponto?\nLimite de velocidade (km/h) — deixe vazio se não souber:', '');
+  if (v === null) return;
+  await Radars.add({ lat: e.latlng.lat, lon: e.latlng.lng, limit: parseInt(v, 10) || null, source: 'meu', note: 'colocado no mapa' });
+  await drawRadars();
+  toast('📷 Radar adicionado.', 2500);
+  if (S.trip && $('#tripSummary').innerHTML.trim()) renderSummary(S.trip);
+});
+
 function icon(html, cls = 'mk', size = 24) {
   return L.divIcon({ html: `<div class="${cls}">${html}</div>`, className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
@@ -87,6 +98,7 @@ function show(id) {
   if (id === 'v-radars') renderRadarList();
   if (id === 'v-music') renderMusic();
   if (id === 'v-settings') renderSettings();
+  if (id === 'v-plan') $('#walkWarn').hidden = !S.settings.walkTest;
   setTimeout(() => map.invalidateSize(), 50);
 }
 for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => show(b.dataset.view);
@@ -378,7 +390,7 @@ $('#btnRoute').onclick = async () => {
     }
     const dest = await resolvePlace(to, 'destino');
     S.points = [from, ...vias, dest];
-    S.alts = await route(S.points);
+    S.alts = await route(S.points, { foot: S.settings.walkTest });
     S.altIdx = 0;
     renderAlts();
   } catch (e) {
@@ -563,6 +575,7 @@ async function startDrive(trip, simulate) {
   layers.alts.clearLayers();
   show('v-drive');
   $('#turn').hidden = !trip;
+  $('#walkBadge').hidden = !S.settings.walkTest;
   $('#poiStrip').hidden = !trip;
   $('#etaClock').textContent = trip ? '--:--' : 'Só radar';
   $('#etaRem').textContent = trip ? '' : `${(await Radars.all()).filter(Radars.isActive).length} radares na base`;
@@ -639,7 +652,7 @@ function render(st) {
   else meMarker.setIcon(L.divIcon({ html, className: '', iconSize: [22, 28], iconAnchor: [11, 14] }));
   meMarker.setLatLng([f.lat, f.lon]);
   if (!layers.me.hasLayer(meMarker)) layers.me.addLayer(meMarker);
-  if (S.follow) map.setView([f.lat, f.lon], st.kmh > 80 ? 15 : 16, { animate: false });
+  if (S.follow) map.setView([f.lat, f.lon], S.nav?.walk ? 17 : st.kmh > 80 ? 15 : 16, { animate: false });
 
   // radar
   const ra = $('#radarAlert');
@@ -865,6 +878,7 @@ function renderSettings() {
   $('#sVoice').checked = s.voice;
   $('#sBeep').checked = s.beep;
   $('#sIntroMusic').checked = s.introMusic;
+  $('#sWalk').checked = s.walkTest;
   $('#sAlert').value = s.alertDist.join(', ');
   $('#sFatigue').value = s.fatigueMin;
   $('#sFuelGap').value = s.fuelGapKm;
@@ -879,6 +893,7 @@ $('#btnSaveSettings').onclick = async () => {
   s.voice = $('#sVoice').checked;
   s.beep = $('#sBeep').checked;
   s.introMusic = $('#sIntroMusic').checked;
+  s.walkTest = $('#sWalk').checked;
   const ad = $('#sAlert').value.split(/[,; ]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 50 && x <= 3000);
   if (ad.length) s.alertDist = ad.sort((a, b) => b - a);
   s.fatigueMin = Math.max(30, +$('#sFatigue').value || 120);

@@ -50,6 +50,7 @@ export const DEFAULT_SETTINGS = {
   fuelGapKm: 60,
   poiRadius: 400,
   introMusic: true,
+  walkTest: false, // modo teste a pé: avisos em distâncias curtas e rota para pedestre
   musicSource: 'spotify', // 'spotify' (se conectado) ou 'local'
   spotifyClientId: '',
   spotifyItem: null, // { uri, name, kind, url }

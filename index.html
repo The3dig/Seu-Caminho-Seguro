@@ -42,7 +42,8 @@
   <!-- ========== PLANEJAR ========== -->
   <section id="v-plan" class="view sheet">
     <h2>Planejar viagem</h2>
-    <p class="hint">A rota é definida agora e <b>nunca muda</b> durante a viagem, mesmo com trânsito.</p>
+    <p class="hint">A rota é definida agora e <b>nunca muda</b> durante a viagem, mesmo com trânsito. Dica: toque e segure no mapa para colocar um radar.</p>
+    <p class="warn" id="walkWarn" hidden>🚶 Modo teste a pé ligado (Ajustes): rota para pedestre e avisos em distâncias curtas.</p>
     <label>Saída</label>
     <div class="row">
       <input id="from" placeholder="Minha localização atual" autocomplete="off">
@@ -92,6 +93,7 @@
       </div>
     </div>
 
+    <div class="walk-badge" id="walkBadge" hidden>🚶 TESTE A PÉ</div>
     <div class="drive-side">
       <button class="btn round" id="btnRecenter" title="Centralizar">🎯</button>
       <button class="btn round" id="btnDriveMusic" title="Música">🎵</button>
@@ -217,6 +219,8 @@
     <label class="check"><input type="checkbox" id="sVoice"> Avisos por voz</label>
     <label class="check"><input type="checkbox" id="sBeep"> Bipes e vibração</label>
     <label class="check"><input type="checkbox" id="sIntroMusic"> Tocar música na abertura</label>
+    <label class="check"><input type="checkbox" id="sWalk"> 🚶 Modo teste a pé</label>
+    <p class="hint">Para testar andando: rota para pedestre e avisos de radar a 300, 150 e 50 m (no carro: as distâncias abaixo). Desligue antes de viajar de carro.</p>
     <label>Distâncias de aviso de radar (metros)</label>
     <input id="sAlert" placeholder="1000, 500, 200">
     <label>Lembrete de pausa a cada (minutos ao volante)</label>

@@ -19,7 +19,9 @@ export class Nav {
     this.trip = trip;
     this.settings = settings;
     this.ui = ui;
-    this.thresholds = [...settings.alertDist].sort((a, b) => b - a);
+    this.walk = !!settings.walkTest;
+    // A pé, os avisos começam bem mais perto para dar pra testar num quarteirão.
+    this.thresholds = this.walk ? [300, 150, 50] : [...settings.alertDist].sort((a, b) => b - a);
     this.line = trip ? makeLine(trip.pts.map(([lat, lon]) => ({ lat, lon }))) : null;
     this.allRadars = radars;
     this.routeRadars = this.line ? this.projectRadars(radars) : [];
@@ -209,14 +211,16 @@ export class Nav {
   announceStep(step, d, kmh) {
     const key = step.along;
     const done = this.stepSpoken.get(key) || 0;
-    const far = kmh > 70 ? 2000 : 800;
+    const far = this.walk ? 250 : kmh > 70 ? 2000 : 800;
     let level = 0;
-    if (d <= 120) level = 3;
-    else if (d <= 500) level = 2;
+    if (d <= (this.walk ? 25 : 120)) level = 3;
+    else if (d <= (this.walk ? 100 : 500)) level = 2;
     else if (d <= far) level = 1;
     if (level > done) {
       this.stepSpoken.set(key, level);
-      if (level === 3) speak(step.text);
+      if (step.type === 'arrive') {
+        if (level < 3) speak(`Destino em ${sayDist(d)}.`);
+      } else if (level === 3) speak(step.text);
       else speak(`Em ${sayDist(d)}, ${step.text.charAt(0).toLowerCase()}${step.text.slice(1)}`);
     }
   }
@@ -250,7 +254,7 @@ export class Nav {
 
   // ---------- Sem rota: só radar ----------
   updateFree(f, kmh, state) {
-    if (f.heading == null || kmh < 8) return;
+    if (f.heading == null || kmh < (this.walk ? 1.5 : 8)) return;
     let best = null;
     for (const r of this.allRadars) {
       if (!isActive(r)) continue;
@@ -260,7 +264,7 @@ export class Nav {
         continue;
       }
       if (r.heading != null && angleDiff(r.heading, f.heading) > 60) continue;
-      const ahead = angleDiff(bearing(f, r), f.heading) < 35 || d < 40;
+      const ahead = angleDiff(bearing(f, r), f.heading) < (this.walk ? 50 : 35) || d < 40;
       const prevMin = this.freeNear.get(r.id);
       if (ahead) {
         this.freeNear.set(r.id, Math.min(prevMin ?? d, d));
