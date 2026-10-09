@@ -268,11 +268,17 @@ function setSpPlaying(v) {
   $('#btnIntroMusic').textContent = v ? '⏸ Pausar a trilha' : '🎷 Tocar a trilha da viagem';
 }
 
-// Trilha padrão: o artista Nat King Cole.
+// Trilha: a escolhida em Músicas; senão a "trilha preferida" (texto) buscada no Spotify.
 async function spItem() {
   if (S.settings.spotifyItem) return S.settings.spotifyItem;
-  const { artists } = await Spotify.search('Nat King Cole');
-  const a = artists.find((x) => /nat king cole/i.test(x.name)) || artists[0];
+  const q = (S.settings.trackQuery || '').trim();
+  if (!q) {
+    const e = new Error('Escolha a sua trilha na aba 🎵 Músicas.');
+    e.noItem = true;
+    throw e;
+  }
+  const { artists, playlists } = await Spotify.search(q);
+  const a = artists.find((x) => x.name.toLowerCase() === q.toLowerCase()) || artists[0] || playlists[0];
   if (a) {
     S.settings.spotifyItem = a;
     await saveSettings(S.settings);
@@ -282,6 +288,7 @@ async function spItem() {
 }
 
 function spFail(e) {
+  if (e.noItem) { toast('🎵 ' + e.message, 5000); return; }
   const needApp = e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404 || e.status === 403;
   toast('🟢 ' + e.message + (needApp ? ' Abrindo o Spotify…' : ''), 7000);
   if (needApp) window.open(Spotify.openLink(S.settings.spotifyItem), '_blank');
@@ -321,9 +328,9 @@ async function trilhaToggle() {
     return;
   }
   if (!Music.tracks().length) {
-    // Sem nada configurado: abre o Nat King Cole direto no app do Spotify.
+    // Sem nada configurado: abre a trilha preferida (ou o Spotify) no app do Spotify.
     toast('🟢 Abrindo o Spotify… dê play lá e volte para cá.', 6000);
-    window.open('https://open.spotify.com/search/Nat%20King%20Cole', '_blank');
+    window.open(spEasyLink(), '_blank');
     return;
   }
   Music.toggle();
@@ -338,9 +345,31 @@ async function spRefresh() {
   } catch { /* sem internet: ignora */ }
 }
 
+function spEasyLink() {
+  const q = (S.settings.trackQuery || '').trim();
+  return q ? `https://open.spotify.com/search/${encodeURIComponent(q)}` : 'https://open.spotify.com/';
+}
+function renderSpEasy() {
+  const q = (S.settings.trackQuery || '').trim();
+  $('#trackQuery').value = q;
+  $('#spEasyOpen').href = spEasyLink();
+  $('#spEasyOpen').textContent = q ? `🟢 Abrir ${q} no Spotify` : '🟢 Abrir o Spotify';
+  if (!$('#spSearch').value) $('#spSearch').value = q;
+}
+$('#trackQuery').onchange = async () => {
+  S.settings.trackQuery = $('#trackQuery').value.trim();
+  S.settings.spotifyItem = null; // a próxima vez busca a trilha nova
+  await saveSettings(S.settings);
+  renderSpEasy();
+  renderSpChoice();
+  toast(S.settings.trackQuery ? `🎵 Trilha da viagem: ${S.settings.trackQuery}` : '🎵 Sem trilha preferida.', 2500);
+};
+
 function renderSpChoice() {
   const it = S.settings.spotifyItem;
-  $('#spChoice').textContent = it ? `${it.kind === 'artista' ? '🎤' : '📃'} ${it.name}${it.owner ? ' · ' + it.owner : ''}` : '🎤 Nat King Cole (padrão)';
+  const q = (S.settings.trackQuery || '').trim();
+  $('#spChoice').textContent = it ? `${it.kind === 'artista' ? '🎤' : '📃'} ${it.name}${it.owner ? ' · ' + it.owner : ''}` : q ? `🎤 ${q}` : 'Nenhuma ainda — busque abaixo';
+  renderSpEasy();
   $('#spOpen').href = Spotify.openLink(it);
 }
 
@@ -361,6 +390,7 @@ async function renderMusic() {
   $('#btnSpConnect').textContent = fixedId ? '🟢 Conectar Spotify' : '🟢 Autorizar Spotify';
   $('#spRedirect').textContent = Spotify.redirectUri();
   $('#spClientId').value = S.settings.spotifyClientId || '';
+  renderSpEasy();
   if (!ok) return;
   renderSpChoice();
   spRefresh();
@@ -484,7 +514,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v33';
+const APP_VERSION = 'v34';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -495,7 +525,7 @@ async function locateMe({ center = false } = {}) {
     box.classList.remove('err');
     if (!S.nav) {
       // Kravenox já aparece aqui (e brinca enquanto você planeja); senão, o ponto azul.
-      const krav = (S.settings.carIcon || 'kravenox') === 'kravenox';
+      const krav = (S.settings.carIcon || 'arrow') === 'kravenox';
       if (krav && !mascot) mascot = new Mascot();
       const icon = krav ? mascot.icon : L.divIcon({ html: '<div class="me"></div>', className: '', iconSize: [22, 22], iconAnchor: [11, 11] });
       if (!hereMarker) hereMarker = L.marker([p.lat, p.lon], { icon, zIndexOffset: 900 });
@@ -1173,7 +1203,7 @@ const CAR_ICONS = ['arrow', 'kravenox', '🚗', '🚙', '🛻', '🏍️', '🚚
 let carImage = null;
 kv.get('carImage').then((v) => { carImage = v || null; });
 function carIcon(heading) {
-  const choice = S.settings.carIcon || 'kravenox';
+  const choice = S.settings.carIcon || 'arrow';
   if (choice === 'custom' && carImage) {
     return L.divIcon({ html: `<div class="car-ico"><img src="${carImage}" alt=""></div>`, className: '', iconSize: [62, 62], iconAnchor: [31, 31] });
   }
@@ -1184,7 +1214,7 @@ function carIcon(heading) {
   return L.divIcon({ html, className: '', iconSize: [32, 40], iconAnchor: [16, 20] });
 }
 function renderCarIcons() {
-  const cur = S.settings.carIcon || 'kravenox';
+  const cur = S.settings.carIcon || 'arrow';
   const face = (c) => c === 'arrow' ? '➤' : c === 'kravenox' ? `<img src="${PORTRAIT}" alt="Kravenox" class="pix" style="width:34px;height:34px">` : c;
   $('#carIcons').innerHTML = CAR_ICONS.map((c) => `<button data-c="${c}" class="${c === cur ? 'sel' : ''}">${face(c)}</button>`).join('') +
     (carImage ? `<button data-c="custom" class="${cur === 'custom' ? 'sel' : ''}"><img src="${carImage}" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover"></button>` : '');
@@ -1237,7 +1267,7 @@ function render(st) {
   if (st.limitDrop) $('#limitNext').textContent = `↓${st.limitDrop.limit} · ${fmtDist(st.limitDrop.d)}`;
   // posição
   const rot = f.heading != null && st.kmh > 3;
-  const krav = (S.settings.carIcon || 'kravenox') === 'kravenox';
+  const krav = (S.settings.carIcon || 'arrow') === 'kravenox';
   if (krav && !mascot) mascot = new Mascot();
   const ico = krav ? mascot.icon : carIcon(rot ? f.heading : null);
   if (!meMarker) meMarker = L.marker([f.lat, f.lon], { icon: ico, zIndexOffset: 1000 });
@@ -2669,9 +2699,36 @@ $('#btnTestVoice').onclick = () => {
   setTimeout(() => Voice.configure(S.settings), 500);
 };
 
+// Dica única para quem é novo: dá pra trocar o ícone do carro e a música.
+function showPersonalizeTip() {
+  $('#tipCard').hidden = !!S.settings.tipPersonalizeSeen;
+}
+async function tipDone() {
+  S.settings.tipPersonalizeSeen = true;
+  await saveSettings(S.settings);
+  $('#tipCard').hidden = true;
+}
+$('#tipGo').onclick = async () => {
+  await tipDone();
+  $('#tabs button[data-view="v-settings"]').click();
+  setTimeout(() => $('#carIcons').scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+};
+$('#tipNo').onclick = tipDone;
+
 // ================= Início =================
 async function init() {
   S.settings = await getSettings();
+  // Quem já usava o app antes desta versão (o dono) continua com o Kravenox e
+  // o Nat King Cole; quem instala agora começa neutro e personaliza.
+  const raw = await kv.get('settings');
+  if (raw && !raw.v34) {
+    if (raw.carIcon === undefined) S.settings.carIcon = 'kravenox';
+    if (raw.trackQuery === undefined) S.settings.trackQuery = 'Nat King Cole';
+    S.settings.tipPersonalizeSeen = true;
+    S.settings.v34 = true;
+    await saveSettings(S.settings);
+  }
+  showPersonalizeTip();
   setSearchKey(S.settings.tomtomKey || CONFIG.tomtomKey);
   Voice.configure(S.settings);
   applyName();

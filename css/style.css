@@ -402,3 +402,6 @@ body.picking #map { bottom: 0; }
 .k-zzz span:nth-child(3) { animation-delay: 1.6s; }
 @keyframes k-z { 0% { transform: translate(0, 0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(14px, -30px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .krav .k-fx, .krav .k-body { animation: none !important; } }
+
+.tip-card { background: #13324a; border: 1px solid #2f6d96; border-radius: 14px; padding: 12px; margin: 8px 0; display: flex; flex-direction: column; gap: 10px; }
+.tip-card .sub { opacity: .8; font-size: 13px; margin-top: 2px; }

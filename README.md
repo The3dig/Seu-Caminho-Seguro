@@ -20,7 +20,7 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | 🧭 **Voltar à rota** | Saiu da rota? Uma seta aponta para o trajeto e o botão “Me leve de volta” traça um caminho curto (linha laranja) até a rota original — a rota principal não muda. |
 | 🔒 **Saída segura** | Ao iniciar, a voz e a tela lembram: “Coloque o cinto e acenda os faróis” (de dia: farol baixo na estrada). Se o servidor do mapa demorar para mandar os radares da rota, o app tenta de novo sozinho (1, 2 e 4 min) — seus radares salvos já ficam ativos. |
 | 🏁 **Chegada** | Cartão “Você chegou! · Encerrar” (também quando você para perto do destino procurando vaga), sem avisos de “fora da rota”; encerra sozinho após 2 min parado. |
-| 🦖 **Seu ícone** | Padrão: o Kravenox (aparece já na tela inicial). Ou seta grande, emojis (🚗 🛻 🏍️ 🦖 🐉…) ou uma imagem sua (ex.: personagem do seu jogo) andando no mapa. |
+| 🦖 **Seu ícone** | Ponto/seta azul por padrão; na primeira vez o app mostra a dica “Deixe o app com a sua cara”. Dá pra trocar por seta grande, emojis (🚗 🛻 🏍️ 🦖 🐉…) ou uma imagem sua (ex.: personagem do seu jogo) andando no mapa. |
 | 👾 **Kravenox** | O personagem do jogo anda no mapa com a mesma caminhada do jogo e vira para onde você vai. Parado, faz brincadeiras sozinho: pula, ruge, pisa forte, solta fogo e explode prediozinhos de mentira, dorme se a parada passar de 3 min e comemora na chegada. Andando, só uma brincadeira pequena de vez em quando, nunca durante avisos (Ajustes › Brincadeiras do Kravenox). |
 | 📷 **Radares** | Avisos por voz e bipe em 1000 m, 500 m e 200 m (ajustável), com limite de velocidade e alerta se estiver acima. |
 | ✅ **Confirmar radar** | Ao passar por um radar, o app pergunta "Tinha?" → ✅/❌. Radares negados repetidamente são desativados sozinhos. |
@@ -42,7 +42,7 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | ⏯ **Retomar** | Se o app fechar no meio da viagem, ao abrir ele oferece continuar de onde parou. |
 | 🌙 **Mapa noturno** | Mapa escuro automático das 18h às 6h. |
 | 📷 **Modo só radar** | Para o dia a dia: sem rota, só alerta os radares da sua base à frente. |
-| 🟢 **Spotify** | Com a sua autorização, o app toca o Nat King Cole (ou qualquer playlist sua) no Spotify do celular — na abertura e pelo botão 🎵 durante a viagem. |
+| 🟢 **Spotify** | Você escolhe a sua trilha preferida (artista ou playlist); com a sua autorização, o app toca ela no Spotify do celular — na abertura e pelo botão 🎵 durante a viagem. |
 | 🎵 **Trilha offline** | Alternativa: seus arquivos de música ficam guardados no celular; a música abaixa sozinha durante os avisos. |
 | 💾 **Backup** | Exporta/importa radares (JSON, CSV, GPX, KML — dá pra importar listas feitas no Google My Maps). |
 
@@ -66,7 +66,7 @@ Requer **Spotify Premium** (exigência do Spotify para apps que controlam a mús
 1. Abra o app já publicado (endereço do GitHub Pages) → aba 🎵 → **Spotify**. Ali aparece o *Redirect URI* para copiar.
 2. Em [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) → **Create app** → cole o *Redirect URI*, marque **Web API**, salve.
 3. Copie o **Client ID**, cole no app e toque em **Autorizar Spotify**. O Spotify pergunta se você permite → **Concordo**.
-4. Pronto: a trilha padrão é o artista Nat King Cole; dá pra buscar outra playlist ou escolher uma das suas.
+4. Pronto: escreva a sua trilha preferida (artista ou playlist) ou escolha uma das suas playlists.
 
 Dica: baixe a playlist no app do Spotify para ela tocar nos trechos sem sinal.
 

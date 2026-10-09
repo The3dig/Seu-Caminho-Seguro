@@ -51,7 +51,8 @@ export const DEFAULT_SETTINGS = {
   poiRadius: 400,
   introMusic: true,
   nightMap: 'auto', // 'auto' | 'on' | 'off'
-  carIcon: 'kravenox', // ícone no mapa: 'kravenox', 'arrow', emoji ou 'custom'
+  carIcon: 'arrow', // ícone no mapa: 'arrow' (ponto/seta azul), 'kravenox', emoji ou 'custom'
+  trackQuery: '', // trilha preferida (artista/playlist) para o Spotify; vazio = a pessoa escolhe
   recordDrives: true,
   logCities: true,
   insistent: true, // avisa radar/limite sempre, mesmo sendo chato
