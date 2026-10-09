@@ -51,6 +51,7 @@ export const DEFAULT_SETTINGS = {
   poiRadius: 400,
   introMusic: true,
   nightMap: 'auto', // 'auto' | 'on' | 'off'
+  carIcon: 'kravenox', // ícone no mapa: 'kravenox', 'arrow', emoji ou 'custom'
   recordDrives: true,
   logCities: true,
   insistent: true, // avisa radar/limite sempre, mesmo sendo chato

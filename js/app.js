@@ -484,6 +484,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 let hereMarker = null;
+let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
 async function locateMe({ center = false } = {}) {
   const box = $('#fromHere');
@@ -491,10 +492,15 @@ async function locateMe({ center = false } = {}) {
     const p = await getPosition({ maximumAge: 15000 });
     box.classList.remove('err');
     if (!S.nav) {
-      const html = '<div class="me"></div>';
-      if (!hereMarker) hereMarker = L.marker([p.lat, p.lon], { icon: L.divIcon({ html, className: '', iconSize: [22, 22], iconAnchor: [11, 11] }), zIndexOffset: 900 });
+      // Kravenox já aparece aqui (e brinca enquanto você planeja); senão, o ponto azul.
+      const krav = (S.settings.carIcon || 'kravenox') === 'kravenox';
+      if (krav && !mascot) mascot = new Mascot();
+      const icon = krav ? mascot.icon : L.divIcon({ html: '<div class="me"></div>', className: '', iconSize: [22, 22], iconAnchor: [11, 11] });
+      if (!hereMarker) hereMarker = L.marker([p.lat, p.lon], { icon, zIndexOffset: 900 });
+      else if (hereMarker.options.icon !== icon && (krav || hereMarker.options.icon === mascot?.icon)) hereMarker.setIcon(icon);
       hereMarker.setLatLng([p.lat, p.lon]);
       if (!layers.me.hasLayer(hereMarker)) layers.me.addLayer(hereMarker);
+      if (krav) mascot.update({ kmh: 0, mode: S.settings.mascotFun || 'always' });
       if (center) map.setView([p.lat, p.lon], 15);
     }
     // Endereço só se mudou de lugar (economiza consultas).
@@ -1110,10 +1116,9 @@ let meMarker = null;
 // Ícone do carro: seta grande (padrão), emoji ou uma imagem sua.
 const CAR_ICONS = ['arrow', 'kravenox', '🚗', '🚙', '🛻', '🏍️', '🚚', '🦖', '🐉', '🦍'];
 let carImage = null;
-let mascot = null;
 kv.get('carImage').then((v) => { carImage = v || null; });
 function carIcon(heading) {
-  const choice = S.settings.carIcon || 'arrow';
+  const choice = S.settings.carIcon || 'kravenox';
   if (choice === 'custom' && carImage) {
     return L.divIcon({ html: `<div class="car-ico"><img src="${carImage}" alt=""></div>`, className: '', iconSize: [62, 62], iconAnchor: [31, 31] });
   }
@@ -1124,7 +1129,7 @@ function carIcon(heading) {
   return L.divIcon({ html, className: '', iconSize: [32, 40], iconAnchor: [16, 20] });
 }
 function renderCarIcons() {
-  const cur = S.settings.carIcon || 'arrow';
+  const cur = S.settings.carIcon || 'kravenox';
   const face = (c) => c === 'arrow' ? '➤' : c === 'kravenox' ? `<img src="${PORTRAIT}" alt="Kravenox" class="pix" style="width:34px;height:34px">` : c;
   $('#carIcons').innerHTML = CAR_ICONS.map((c) => `<button data-c="${c}" class="${c === cur ? 'sel' : ''}">${face(c)}</button>`).join('') +
     (carImage ? `<button data-c="custom" class="${cur === 'custom' ? 'sel' : ''}"><img src="${carImage}" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover"></button>` : '');
@@ -1177,7 +1182,7 @@ function render(st) {
   if (st.limitDrop) $('#limitNext').textContent = `↓${st.limitDrop.limit} · ${fmtDist(st.limitDrop.d)}`;
   // posição
   const rot = f.heading != null && st.kmh > 3;
-  const krav = S.settings.carIcon === 'kravenox';
+  const krav = (S.settings.carIcon || 'kravenox') === 'kravenox';
   if (krav && !mascot) mascot = new Mascot();
   const ico = krav ? mascot.icon : carIcon(rot ? f.heading : null);
   if (!meMarker) meMarker = L.marker([f.lat, f.lon], { icon: ico, zIndexOffset: 1000 });
