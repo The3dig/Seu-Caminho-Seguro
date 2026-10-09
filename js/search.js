@@ -40,13 +40,20 @@ async function placeCenter(name) {
   return d ? { lat: +d.lat, lon: +d.lon, name: d.display_name.split(',')[0] } : null;
 }
 
-async function overpassAround(filters, center, radius) {
-  const q = `[out:json][timeout:25];(${filters.map((f) => `nwr(around:${radius},${center.lat},${center.lon})${f};`).join('')});out center tags 40;`;
-  const res = await fetchT('https://overpass-api.de/api/interpreter', {
-    method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  }, 30000);
-  if (!res.ok) throw new Error('overpass ' + res.status);
-  return (await res.json()).elements || [];
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+async function overpassAround(filters, center, radius, ms = 20000) {
+  const q = `[out:json][timeout:20];(${filters.map((f) => `nwr(around:${radius},${center.lat},${center.lon})${f};`).join('')});out center tags 40;`;
+  let err;
+  for (const url of OVERPASS) {
+    try {
+      const res = await fetchT(url, {
+        method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }, ms);
+      if (res.ok) return (await res.json()).elements || [];
+      err = new Error('overpass ' + res.status);
+    } catch (e) { err = e; }
+  }
+  throw err;
 }
 
 // Separa "o quê" e "onde": tenta as últimas palavras como cidade.
@@ -60,7 +67,7 @@ async function splitWhatWhere(words) {
   return null;
 }
 
-async function poiSearch(text, near) {
+export async function poiSearch(text, near, { ms = 20000 } = {}) {
   const words = norm(text).split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const split = words.length > 1 ? await splitWhatWhere(words) : null;
@@ -76,7 +83,7 @@ async function poiSearch(text, near) {
   } else {
     filters.push(`["name"~"${esc(what)}",i]`);
   }
-  const els = await overpassAround(filters, center, split ? 15000 : 25000);
+  const els = await overpassAround(filters, center, split ? 15000 : 25000, ms);
   const seen = new Set();
   const out = [];
   for (const el of els) {
@@ -125,23 +132,14 @@ export async function searchPlaces(text, near = null) {
 // Usa o Photon (feito para isso) e, para palavras como "upa", "posto",
 // "farmácia", também procura esse tipo de lugar ao seu redor.
 const sugCache = new Map();
-export async function suggestPlaces(text, near = null) {
-  const q = norm(text);
-  if (q.length < 2) return [];
-  const key = `${q}|${near ? `${near.lat.toFixed(2)},${near.lon.toFixed(2)}` : ''}`;
-  if (sugCache.has(key)) return sugCache.get(key);
-  const words = q.split(/\s+/).filter(Boolean);
-  const tasks = [photon(text, near)];
-  if (near && words.length === 1 && KINDS.some((k) => k.rx.test(words[0]))) tasks.push(poiSearch(text, near));
-  const res = await Promise.allSettled(tasks);
-  if (res.every((r) => r.status === 'rejected')) throw res[0].reason;
-  const all = res.flatMap((r) => r.value || []);
+
+function rankList(all, words, near) {
+  const syn = KINDS.find((k) => k.rx.test(words[0]))?.name;
   const out = [];
   for (const r of all) {
     if (out.some((o) => km(o, r) < 0.15)) continue;
     const name = norm(r.label.split(',')[0]);
     const full = norm(r.label);
-    const syn = KINDS.find((k) => k.rx.test(words[0]))?.name;
     r.rank = words.every((w) => name.includes(w)) ? 3 : syn && new RegExp(syn).test(name) ? 2 : words.every((w) => full.includes(w)) ? 1 : 0;
     r.km = near ? km(near, r) : null;
     out.push(r);
@@ -150,8 +148,28 @@ export async function suggestPlaces(text, near = null) {
   // sinônimo), o mais perto primeiro; os muito longe (>80 km) vão pro fim.
   const tier = (r) => (r.rank >= 2 ? 2 : r.rank) - (r.km != null && r.km > 80 ? 3 : 0);
   out.sort((a, b) => tier(b) - tier(a) || (a.km ?? 0) - (b.km ?? 0));
-  const top = out.slice(0, 7);
-  sugCache.set(key, top);
+  return out.slice(0, 7);
+}
+
+// onUpdate(lista) é chamado a cada fonte que responde (mostra o que já chegou).
+export async function suggestPlaces(text, near = null, onUpdate = () => {}) {
+  const q = norm(text);
+  if (q.length < 2) return [];
+  const key = `${q}|${near ? `${near.lat.toFixed(2)},${near.lon.toFixed(2)}` : ''}`;
+  if (sugCache.has(key)) { onUpdate(sugCache.get(key)); return sugCache.get(key); }
+  const words = q.split(/\s+/).filter(Boolean);
+  const got = [];
+  let best = [];
+  const push = (list) => { got.push(...list); best = rankList(got, words, near); onUpdate(best); };
+  const tasks = [];
+  // 1) sua região (~50 km) primeiro; 2) qualquer lugar
+  if (near) tasks.push(photon(text, near, { area: 0.45, ms: 7000 }).then(push));
+  tasks.push(photon(text, near, { ms: 9000 }).then(push));
+  // "upa", "posto", "farmácia"…: procura esse tipo de lugar ao seu redor
+  if (near && words.length <= 2 && KINDS.some((k) => k.rx.test(words[0]))) tasks.push(poiSearch(text, near, { ms: 12000 }).then(push));
+  const res = await Promise.allSettled(tasks);
+  if (!got.length && res.every((r) => r.status === 'rejected')) throw res[0].reason;
+  sugCache.set(key, best);
   if (sugCache.size > 100) sugCache.delete(sugCache.keys().next().value);
-  return top;
+  return best;
 }

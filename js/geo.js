@@ -114,6 +114,7 @@ export function fmtDist(m) {
 export function fmtDur(s) {
   if (s == null || !isFinite(s)) return '--';
   const m = Math.round(s / 60);
+  if (m < 1) return 'menos de 1 min';
   if (m < 60) return `${m} min`;
   return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
 }

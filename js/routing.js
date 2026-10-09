@@ -52,9 +52,11 @@ async function nominatim(text, near) {
 }
 
 // Photon (OpenStreetMap, komoot): melhor para "UPA Caraguatatuba", "posto X em Y".
-export async function photon(text, near) {
-  const bias = near ? `&lat=${near.lat}&lon=${near.lon}` : '';
-  const res = await fetchT(`https://photon.komoot.io/api/?limit=10${bias}&q=${encodeURIComponent(text)}`, {}, 12000);
+// area: graus em volta de "near" para limitar a busca à sua região (0 = sem limite).
+export async function photon(text, near, { area = 0, ms = 12000 } = {}) {
+  const bias = near ? `&lat=${near.lat}&lon=${near.lon}&location_bias_scale=0.6` : '';
+  const box = near && area ? `&bbox=${near.lon - area},${near.lat - area},${near.lon + area},${near.lat + area}` : '';
+  const res = await fetchT(`https://photon.komoot.io/api/?limit=12${bias}${box}&q=${encodeURIComponent(text)}`, {}, ms);
   if (!res.ok) throw new Error('photon ' + res.status);
   return ((await res.json()).features || [])
     .filter((f) => !f.properties.countrycode || f.properties.countrycode === 'BR')
@@ -72,7 +74,10 @@ export async function photon(text, near) {
 export async function geocode(text, near = null) {
   const c = parseCoords(text);
   if (c) return [c];
-  const [a, b] = await Promise.allSettled([nominatim(text, near), photon(text, near)]);
+  const [a, b, local] = await Promise.allSettled([nominatim(text, near), photon(text, near), near ? photon(text, near, { area: 0.45, ms: 9000 }) : Promise.resolve([])]);
+  // Resultados da sua região (~50 km) entram primeiro.
+  if (local.status === 'fulfilled' && b.status === 'fulfilled') b.value.unshift(...local.value);
+  else if (local.status === 'fulfilled') Object.assign(b, { status: 'fulfilled', value: local.value });
   if (a.status === 'rejected' && b.status === 'rejected') throw a.reason;
   const all = [...(a.value || []), ...(b.value || [])];
   // Números (da casa) não contam: o mapa quase nunca tem o número.

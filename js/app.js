@@ -645,6 +645,14 @@ $('#btnRoute').onclick = async () => {
     routeBtn('🔎 Procurando o destino… (toque para cancelar)');
     const dest = await resolvePlace(to, 'destino');
     if (!alive()) return;
+    // Já está no destino (ex.: tocou em Casa estando em casa)?
+    const meters = Math.hypot((dest.lat - from.lat) * 111000, (dest.lon - from.lon) * 111000 * Math.cos(from.lat * Math.PI / 180));
+    if (!vias.length && meters < 150) {
+      const nm = dest.label?.split(',')[0] || 'no destino';
+      toast(`📍 Você já está em ${nm} (a ${Math.round(meters)} metros). Não precisa de rota.`, 5000);
+      Voice.speak(`Você já está em ${nm.replace(/^[^\p{L}\d]+/u, '')}.`);
+      return;
+    }
     routeBtn('🛣️ Calculando a rota… (toque para cancelar)');
     const alts = await route([from, ...vias, dest], { foot: S.settings.walkTest });
     if (!alive()) return;
@@ -731,7 +739,7 @@ function showRouteBar(info) {
   const bar = $('#routeBar');
   bar.hidden = !info;
   if (!info) return;
-  $('#rbMain').textContent = `${fmtDist(info.distance)} · ${fmtDur(info.duration)}`;
+  $('#rbMain').textContent = `${info.distance < 1000 ? `${Math.round(info.distance)} metros` : fmtDist(info.distance)} · ${fmtDur(info.duration)}`;
   $('#rbSub').textContent = `até ${info.dest} · chegada ${fmtClock(new Date(Date.now() + info.duration * 1000))}`;
 }
 
@@ -2185,27 +2193,34 @@ function attachSuggest(inputSel, onPick) {
     timer = setTimeout(async () => {
       const my = ++seq;
       box.hidden = false;
-      box.innerHTML = '<li class="sub">🔎 procurando…</li>';
+      box.innerHTML = '<li class="sub">🔎 procurando perto de você…</li>';
+      let shown = [];
+      const render = (list0, done) => {
+        if (my !== seq || inp.value.trim() !== t) return;
+        // Enquanto ainda procura na sua região, não mostra os muito longe (>80 km).
+        const list = done ? list0 : list0.filter((r) => r.km == null || r.km <= 80);
+        if (!list.length) {
+          box.innerHTML = done ? '<li class="sub">Nenhuma sugestão — continue digitando, ou toque no botão para uma busca completa.</li>' : '<li class="sub">🔎 procurando perto de você…</li>';
+          return;
+        }
+        shown = list;
+        // Sobe o campo para o topo: as sugestões ficam acima do teclado.
+        inp.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        box.innerHTML = list.map((r, i) => {
+          const [name, ...rest] = r.label.split(',');
+          return `<li data-i="${i}"><span class="pin">📍</span><div class="grow"><div class="title">${esc(name)}</div><div class="sub">${esc(rest.join(',').trim())}</div></div><span class="km">${fmtKm(r.km)}</span></li>`;
+        }).join('') + (done ? '' : '<li class="sub">🔎 procurando mais…</li>');
+        for (const li of box.querySelectorAll('li[data-i]')) {
+          li.onclick = () => {
+            box.hidden = true;
+            seq++;
+            onPick(shown[+li.dataset.i]);
+          };
+        }
+      };
       let list = [];
-      try { list = await suggestPlaces(t, S.here); } catch { /* sem internet */ }
-      if (my !== seq || inp.value.trim() !== t) return;
-      if (!list.length) {
-        box.innerHTML = '<li class="sub">Nenhuma sugestão ainda — continue digitando ou toque no botão para buscar.</li>';
-        return;
-      }
-      // Sobe o campo para o topo: as sugestões ficam acima do teclado.
-      inp.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      box.innerHTML = list.map((r, i) => {
-        const [name, ...rest] = r.label.split(',');
-        return `<li data-i="${i}"><span class="pin">📍</span><div class="grow"><div class="title">${esc(name)}</div><div class="sub">${esc(rest.join(',').trim())}</div></div><span class="km">${fmtKm(r.km)}</span></li>`;
-      }).join('');
-      for (const li of box.querySelectorAll('li[data-i]')) {
-        li.onclick = () => {
-          box.hidden = true;
-          seq++;
-          onPick(list[+li.dataset.i]);
-        };
-      }
+      try { list = await suggestPlaces(t, S.here, (l) => render(l, false)); } catch { /* sem internet */ }
+      render(list, true);
     }, 450);
   });
 }
@@ -2215,6 +2230,9 @@ $('#v-plan').addEventListener('focusin', (e) => { if (e.target.matches('input'))
 $('#v-plan').addEventListener('focusout', () => setTimeout(() => {
   if (!$('#v-plan').contains(document.activeElement) || !document.activeElement.matches('input')) $('#v-plan').classList.remove('expanded');
 }, 350));
+
+// Começou a digitar outro destino: a barra da rota anterior sai da frente.
+$('#to').addEventListener('input', () => { if (!S.nav) { showRouteBar(null); clearAlts(); } });
 
 // Destino: tocou na sugestão, já traça a rota (como no Waze).
 attachSuggest('#to', (r) => {
