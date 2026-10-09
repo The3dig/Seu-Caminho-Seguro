@@ -53,10 +53,14 @@ async function nominatim(text, near) {
 
 // Photon (OpenStreetMap, komoot): melhor para "UPA Caraguatatuba", "posto X em Y".
 // area: graus em volta de "near" para limitar a busca à sua região (0 = sem limite).
-export async function photon(text, near, { area = 0, ms = 12000 } = {}) {
-  const bias = near ? `&lat=${near.lat}&lon=${near.lon}&location_bias_scale=0.6` : '';
-  const box = near && area ? `&bbox=${near.lon - area},${near.lat - area},${near.lon + area},${near.lat + area}` : '';
-  const res = await fetchT(`https://photon.komoot.io/api/?limit=12${bias}${box}&q=${encodeURIComponent(text)}`, {}, ms);
+// global: sem puxar para perto de você (os mais "famosos" do Brasil primeiro);
+// places: só cidades/vilas.
+export async function photon(text, near, { area = 0, ms = 12000, global = false, places = false, limit = 12 } = {}) {
+  const bias = near && !global ? `&lat=${near.lat}&lon=${near.lon}&location_bias_scale=0.6` : '';
+  const box = global ? '&bbox=-74,-34,-34,6'
+    : near && area ? `&bbox=${near.lon - area},${near.lat - area},${near.lon + area},${near.lat + area}` : '';
+  const tags = places ? '&osm_tag=place:city&osm_tag=place:town&osm_tag=place:village&osm_tag=place:municipality' : '';
+  const res = await fetchT(`https://photon.komoot.io/api/?limit=${limit}${bias}${box}${tags}&q=${encodeURIComponent(text)}`, {}, ms);
   if (!res.ok) throw new Error('photon ' + res.status);
   return ((await res.json()).features || [])
     .filter((f) => !f.properties.countrycode || f.properties.countrycode === 'BR')
@@ -65,8 +69,19 @@ export async function photon(text, near, { area = 0, ms = 12000 } = {}) {
       const street = [p.street, p.housenumber].filter(Boolean).join(', ');
       const label = [p.name, street !== p.name ? street : '', p.district || p.locality, p.city || p.county, p.state]
         .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
-      return { lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], label };
+      return { lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], label, cls: placeClass(p) };
     });
+}
+
+// Que tipo de lugar é: cidade, rua, ponto turístico/igreja famoso, comércio ou endereço.
+function placeClass(p) {
+  const k = p.osm_key, v = p.osm_value;
+  if ((k === 'place' && /^(city|town|village|municipality|hamlet)$/.test(v)) || (k === 'boundary' && /^(city|town)$/.test(p.type))) return 'city';
+  if (k === 'highway' || p.type === 'street') return 'street';
+  if (k === 'tourism' || k === 'historic' || (k === 'amenity' && v === 'place_of_worship') || (k === 'building' && /^(cathedral|church|basilica)$/.test(v))
+    || (k === 'aeroway' && v === 'aerodrome') || (k === 'leisure' && /^(stadium|park)$/.test(v)) || k === 'natural') return 'landmark';
+  if (p.name && k && k !== 'place' && k !== 'boundary') return 'poi';
+  return 'addr';
 }
 
 // Busca em duas fontes e ordena: primeiro os que contêm as palavras digitadas

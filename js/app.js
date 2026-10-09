@@ -2439,8 +2439,9 @@ function attachSuggest(inputSel, onPick) {
       let shown = [];
       const render = (list0, done) => {
         if (my !== seq || inp.value.trim() !== t) return;
-        // Enquanto ainda procura na sua região, não mostra os muito longe (>80 km).
-        const list = done ? list0 : list0.filter((r) => r.km == null || r.km <= 80);
+        // Enquanto ainda procura na sua região, não mostra os muito longe (>80 km),
+        // a não ser os famosos (a cidade, o santuário).
+        const list = done ? list0 : list0.filter((r) => r.fame || r.km == null || r.km <= 80);
         if (!list.length) {
           box.innerHTML = done ? '<li class="sub">Nenhuma sugestão — continue digitando, ou toque no botão para uma busca completa.</li>' : '<li class="sub">🔎 procurando perto de você…</li>';
           return;
@@ -2450,7 +2451,8 @@ function attachSuggest(inputSel, onPick) {
         inp.scrollIntoView({ block: 'start', behavior: 'smooth' });
         box.innerHTML = list.map((r, i) => {
           const [name, ...rest] = r.label.split(',');
-          return `<li data-i="${i}"><span class="pin">📍</span><div class="grow"><div class="title">${esc(name)}</div><div class="sub">${esc(rest.join(',').trim())}</div></div><span class="km">${fmtKm(r.km)}</span></li>`;
+          const pin = r.cls === 'city' ? '🏙️' : r.cls === 'landmark' ? '⭐' : r.cls === 'street' ? '🛣️' : '📍';
+          return `<li data-i="${i}"><span class="pin">${pin}</span><div class="grow"><div class="title">${esc(name)}</div><div class="sub">${esc(rest.join(',').trim())}</div></div><span class="km">${fmtKm(r.km)}</span></li>`;
         }).join('') + (done ? '' : '<li class="sub">🔎 procurando mais…</li>');
         for (const li of box.querySelectorAll('li[data-i]')) {
           li.onclick = () => {
