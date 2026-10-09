@@ -1910,19 +1910,48 @@ async function renderQuick() {
   renderSuggestions();
 }
 
+// Recentes: um toque já traça a rota; tocar e segurar tira da lista.
+// Mostra a distância para não confundir dois lugares com o mesmo nome.
 async function renderSuggestions() {
-  const list = await Places.suggestions(6);
+  const list = await Places.suggestions(5);
   const box = $('#suggestions');
-  box.innerHTML = list.map((r, i) => `<button class="btn" data-i="${i}">🕘 <span>${esc(r.label.split(',')[0])}</span></button>`).join('');
+  const kmTo = (r) => {
+    if (!S.here) return '';
+    const d = Math.hypot((r.lat - S.here.lat) * 111, (r.lon - S.here.lon) * 111 * Math.cos(r.lat * Math.PI / 180));
+    return ` · ${d < 10 ? d.toFixed(1).replace('.', ',') : Math.round(d)} km`;
+  };
+  box.innerHTML = list.map((r, i) => `<button class="btn" data-i="${i}">🕘 <span>${esc(r.label.split(',')[0])}<small>${kmTo(r)}</small></span></button>`).join('');
   for (const b of box.querySelectorAll('button')) {
+    const r = list[+b.dataset.i];
+    let timer = null, long = false;
+    b.onpointerdown = () => {
+      long = false;
+      timer = setTimeout(async () => {
+        long = true;
+        if (confirm(`Tirar “${r.label.split(',')[0]}” dos recentes?`)) { await Places.removeRecent(r.id); renderSuggestions(); }
+      }, 600);
+    };
+    b.onpointerup = b.onpointerleave = b.onpointercancel = () => clearTimeout(timer);
+    b.oncontextmenu = (e) => e.preventDefault();
     b.onclick = () => {
-      const r = list[+b.dataset.i];
+      if (long) return;
       const text = r.label.split(',')[0];
       S.presets.set(text, { lat: r.lat, lon: r.lon, label: r.label });
       $('#to').value = text;
+      setFrom('');
+      $('#btnRoute').click();
     };
   }
+  updateRecentChips();
 }
+// Enquanto você digita, os recentes saem da frente das sugestões.
+function updateRecentChips() {
+  const to = $('#to');
+  $('#suggestions').hidden = document.activeElement === to && to.value.trim() !== '';
+}
+$('#to').addEventListener('input', updateRecentChips);
+$('#to').addEventListener('focus', updateRecentChips);
+$('#to').addEventListener('blur', () => setTimeout(updateRecentChips, 350));
 
 async function renderPlaces() {
   const favs = await Places.favorites();

@@ -67,7 +67,7 @@ export async function addRecent(p) {
   if (near) {
     near.count++;
     near.last = Date.now();
-    if (p.label && p.label.length < near.label.length) near.label = p.label;
+    if (p.label) near.label = p.label; // fica o nome da última escolha
   } else {
     list.push({ id: uid(), lat: p.lat, lon: p.lon, label: p.label || `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`, count: 1, last: Date.now() });
   }

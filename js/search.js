@@ -80,19 +80,34 @@ async function placeCenter(name) {
 }
 
 const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
-async function overpassAround(filters, center, radius, ms = 20000) {
+// fast: pergunta aos 3 servidores ao mesmo tempo e usa o primeiro que responder
+// (nas sugestões, enquanto digita); senão tenta um de cada vez.
+async function overpassAround(filters, center, radius, ms = 20000, fast = false) {
   const q = `[out:json][timeout:20];(${filters.map((f) => `nwr(around:${radius},${center.lat},${center.lon})${f};`).join('')});out center tags 40;`;
+  const ask = async (url) => {
+    const res = await fetchT(url, {
+      method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    }, ms);
+    if (!res.ok) throw new Error('overpass ' + res.status);
+    return (await res.json()).elements || [];
+  };
+  if (fast) {
+    try { return await Promise.any(OVERPASS.map(ask)); } catch (e) { throw e.errors?.[0] || e; }
+  }
   let err;
   for (const url of OVERPASS) {
-    try {
-      const res = await fetchT(url, {
-        method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      }, ms);
-      if (res.ok) return (await res.json()).elements || [];
-      err = new Error('overpass ' + res.status);
-    } catch (e) { err = e; }
+    try { return await ask(url); } catch (e) { err = e; }
   }
   throw err;
+}
+
+// Nominatim só dentro de um quadrado ao seu redor (~35 km): acha lojas pelo nome.
+async function nominatimNear(text, near, ms = 9000) {
+  const d = 0.32;
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&countrycodes=br&bounded=1&accept-language=pt-BR&viewbox=${near.lon - d},${near.lat + d},${near.lon + d},${near.lat - d}&q=${encodeURIComponent(text)}`;
+  const res = await fetchT(url, {}, ms);
+  if (!res.ok) throw new Error('nominatim ' + res.status);
+  return (await res.json()).map((r) => ({ lat: +r.lat, lon: +r.lon, label: r.display_name.split(',').slice(0, 4).join(','), cls: 'poi' }));
 }
 
 // Separa "o quê" e "onde": tenta as últimas palavras como cidade.
@@ -237,8 +252,8 @@ export async function suggestPlaces(text, near = null, onUpdate = () => {}) {
   }
   // Marca: todas as lojas dela ao seu redor (o buscador de endereço acha só algumas).
   if (brand && near) {
-    const center = near;
-    tasks.push(overpassAround([`["name"~"${brand.osm}",i]`, `["brand"~"${brand.osm}",i]`], center, 30000, 12000).then((els) => push(els.map((el) => {
+    tasks.push(nominatimNear(brand.name, near).then(push));
+    tasks.push(overpassAround([`["name"~"${brand.osm}",i]`, `["brand"~"${brand.osm}",i]`], near, 30000, 15000, true).then((els) => push(els.map((el) => {
       const t = el.tags || {};
       const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
       const street = [t['addr:street'], t['addr:housenumber']].filter(Boolean).join(', ');

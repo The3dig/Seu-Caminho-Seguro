@@ -199,6 +199,7 @@ a.btn.round { color: var(--text); }
 .quick .btn.unset { opacity: .6; border: 1px dashed #4a5b6c; background: none; }
 .chips.sugg { justify-content: flex-start; margin-top: 8px; }
 .chips.sugg .btn { font-size: 13px; padding: 6px 10px; border-radius: 999px; min-width: 0; font-weight: 500; max-width: 100%; }
+.chips.sugg .btn small { opacity: .65; font-weight: 400; }
 .chips.sugg .btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 .modal { position: fixed; inset: 0; z-index: 2500; background: #000a; display: flex; align-items: flex-end; justify-content: center; }
 .modal-box { background: var(--bg); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; border-radius: 18px 18px 0 0;
