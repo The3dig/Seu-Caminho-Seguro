@@ -7,5 +7,5 @@ export const CONFIG = {
   // Chave grátis da TomTom (developer.tomtom.com) para a busca de lugares.
   // Preenchida aqui, vale para todo mundo que abrir o app. Vazio = cada um
   // pode colar a sua em Ajustes; sem chave, usa a busca gratuita do OpenStreetMap.
-  tomtomKey: '',
+  tomtomKey: 'LqPYKPXicldViUAMLoj0UfbZJdyDIV82',
 };
