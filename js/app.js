@@ -1108,6 +1108,10 @@ function stopDrive() {
   if (S.trip) { drawTrip(S.trip); renderSummary(S.trip); }
 }
 
+// Botões do lado ficam sempre logo acima do painel de baixo (que muda de altura).
+new ResizeObserver(([e]) => {
+  $('#v-drive').style.setProperty('--db-h', `${Math.round(e.target.offsetHeight)}px`);
+}).observe($('#v-drive .drive-bottom'));
 $('#btnStop').onclick = () => { if (confirm('Encerrar a navegação e salvar no histórico?')) stopDrive(); };
 $('#btnRecenter').onclick = () => { S.follow = true; if (S.lastFix) map.setView([S.lastFix.lat, S.lastFix.lon], 16); };
 $('#btnDriveMusic').onclick = () => trilhaToggle();

@@ -132,7 +132,7 @@ input:focus { outline: 2px solid var(--accent); }
   display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 900; }
 .ra-title { font-size: 16px; color: #ffb3ae; font-weight: 700; letter-spacing: 2px; }
 .ra-dist { font-size: 38px; font-weight: 900; }
-.drive-side { position: absolute; right: 10px; top: 45%; display: flex; flex-direction: column; gap: 10px; }
+.drive-side { position: absolute; right: 10px; bottom: calc(var(--db-h, 220px) + 8px); z-index: 6; /* logo acima dos cards de posto e do painel; nunca por baixo deles (pegavam o toque no Encerrar) */ display: flex; flex-direction: column; gap: 10px; }
 .drive-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 0 10px calc(10px + var(--safe-b)); }
 .pois { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
 .poi { flex: 0 0 auto; background: #0f1720ee; border-radius: 12px; padding: 8px 12px; min-width: 130px; box-shadow: 0 2px 8px #0008; }
