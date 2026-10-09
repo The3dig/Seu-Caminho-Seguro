@@ -12,6 +12,7 @@ import * as Places from './places.js';
 import { CONFIG } from './config.js';
 import { searchPlaces, suggestPlaces } from './search.js';
 import * as Cities from './cities.js';
+import { Mascot, PORTRAIT } from './mascot.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1107,8 +1108,9 @@ $('#btnDriveMusic').onclick = () => trilhaToggle();
 
 let meMarker = null;
 // Ícone do carro: seta grande (padrão), emoji ou uma imagem sua.
-const CAR_ICONS = ['arrow', '🚗', '🚙', '🛻', '🏍️', '🚚', '🦖', '🐉', '🦍'];
+const CAR_ICONS = ['arrow', 'kravenox', '🚗', '🚙', '🛻', '🏍️', '🚚', '🦖', '🐉', '🦍'];
 let carImage = null;
+let mascot = null;
 kv.get('carImage').then((v) => { carImage = v || null; });
 function carIcon(heading) {
   const choice = S.settings.carIcon || 'arrow';
@@ -1123,7 +1125,8 @@ function carIcon(heading) {
 }
 function renderCarIcons() {
   const cur = S.settings.carIcon || 'arrow';
-  $('#carIcons').innerHTML = CAR_ICONS.map((c) => `<button data-c="${c}" class="${c === cur ? 'sel' : ''}">${c === 'arrow' ? '➤' : c}</button>`).join('') +
+  const face = (c) => c === 'arrow' ? '➤' : c === 'kravenox' ? `<img src="${PORTRAIT}" alt="Kravenox" class="pix" style="width:34px;height:34px">` : c;
+  $('#carIcons').innerHTML = CAR_ICONS.map((c) => `<button data-c="${c}" class="${c === cur ? 'sel' : ''}">${face(c)}</button>`).join('') +
     (carImage ? `<button data-c="custom" class="${cur === 'custom' ? 'sel' : ''}"><img src="${carImage}" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover"></button>` : '');
   for (const b of $('#carIcons').querySelectorAll('button')) {
     b.onclick = async () => {
@@ -1174,11 +1177,18 @@ function render(st) {
   if (st.limitDrop) $('#limitNext').textContent = `↓${st.limitDrop.limit} · ${fmtDist(st.limitDrop.d)}`;
   // posição
   const rot = f.heading != null && st.kmh > 3;
-  const ico = carIcon(rot ? f.heading : null);
+  const krav = S.settings.carIcon === 'kravenox';
+  if (krav && !mascot) mascot = new Mascot();
+  const ico = krav ? mascot.icon : carIcon(rot ? f.heading : null);
   if (!meMarker) meMarker = L.marker([f.lat, f.lon], { icon: ico, zIndexOffset: 1000 });
-  else meMarker.setIcon(ico);
+  else if (!krav || meMarker.options.icon !== ico) meMarker.setIcon(ico);
   meMarker.setLatLng([f.lat, f.lon]);
   if (!layers.me.hasLayer(meMarker)) layers.me.addLayer(meMarker);
+  if (krav) {
+    // Brincadeiras nunca por cima de avisos: radar, limite, fora da rota ou manobra perto.
+    const quiet = !!(st.radar || st.overRoad || st.limitDrop || st.off || (st.stepDist != null && st.stepDist < 400 && st.kmh > 3));
+    mascot.update({ kmh: st.kmh, heading: f.heading, arrived: !!st.arrived, quiet, mode: S.settings.mascotFun || 'always' });
+  }
   if (S.follow) map.setView([f.lat, f.lon], S.nav?.walk ? 17 : st.kmh > 80 ? 15 : 16, { animate: false });
 
   // radar
@@ -1579,6 +1589,7 @@ function renderSettings() {
   $('#sIntroMusic').checked = s.introMusic;
   $('#sWalk').checked = s.walkTest;
   $('#sNight').value = s.nightMap;
+  $('#sMascotFun').value = s.mascotFun || 'always';
   $('#sRecord').checked = s.recordDrives;
   $('#sCities').checked = s.logCities;
   $('#sSpeedWarn').checked = s.speedWarn !== false;
@@ -1604,6 +1615,7 @@ $('#btnSaveSettings').onclick = async () => {
   s.introMusic = $('#sIntroMusic').checked;
   s.walkTest = $('#sWalk').checked;
   s.nightMap = $('#sNight').value;
+  s.mascotFun = $('#sMascotFun').value;
   s.recordDrives = $('#sRecord').checked;
   s.logCities = $('#sCities').checked;
   s.speedWarn = $('#sSpeedWarn').checked;
@@ -2591,4 +2603,4 @@ async function init() {
 init();
 
 // Para testes no console.
-window.__app = { S, map };
+window.__app = { S, map, get mascot() { return mascot; } };

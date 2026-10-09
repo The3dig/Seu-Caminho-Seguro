@@ -20,6 +20,7 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | 🧭 **Voltar à rota** | Saiu da rota? Uma seta aponta para o trajeto e o botão “Me leve de volta” traça um caminho curto (linha laranja) até a rota original — a rota principal não muda. |
 | 🏁 **Chegada** | Cartão “Você chegou! · Encerrar” (também quando você para perto do destino procurando vaga), sem avisos de “fora da rota”; encerra sozinho após 2 min parado. |
 | 🦖 **Seu ícone** | Seta grande, emojis (🚗 🛻 🏍️ 🦖 🐉…) ou uma imagem sua (ex.: personagem do seu jogo) andando no mapa. |
+| 👾 **Kravenox** | O personagem do jogo anda no mapa com a mesma caminhada do jogo e vira para onde você vai. Parado, faz brincadeiras sozinho: pula, ruge, pisa forte, solta fogo e explode prediozinhos de mentira, dorme se a parada passar de 3 min e comemora na chegada. Andando, só uma brincadeira pequena de vez em quando, nunca durante avisos (Ajustes › Brincadeiras do Kravenox). |
 | 📷 **Radares** | Avisos por voz e bipe em 1000 m, 500 m e 200 m (ajustável), com limite de velocidade e alerta se estiver acima. |
 | ✅ **Confirmar radar** | Ao passar por um radar, o app pergunta "Tinha?" → ✅/❌. Radares negados repetidamente são desativados sozinhos. |
 | ➕ **Marcar radar** | Botão vermelho grande: marca um radar onde você está (e o sentido da via) e pergunta o limite. |
@@ -97,6 +98,7 @@ js/pois.js            postos/restaurantes/radares via OpenStreetMap (Overpass)
 js/radars.js          base pessoal de radares + importação/exportação
 js/places.js          lugares fixos, recentes, histórico e retomada
 js/cities.js          diário de cidades (passou / parou)
+js/mascot.js          Kravenox no mapa (caminhada e brincadeiras)
 js/planner.js         roteiro dia a dia: pausas, pernoites, pedágio e combustível
 js/config.js          Client ID do Spotify embutido (opcional)
 js/music.js           player offline
