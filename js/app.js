@@ -483,6 +483,8 @@ function getPosition(opts = {}) {
 }
 
 // ---------- Saída = onde você está ----------
+// Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
+const APP_VERSION = 'v31';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1112,7 +1114,26 @@ function stopDrive() {
 new ResizeObserver(([e]) => {
   $('#v-drive').style.setProperty('--db-h', `${Math.round(e.target.offsetHeight)}px`);
 }).observe($('#v-drive .drive-bottom'));
-$('#btnStop').onclick = () => { if (confirm('Encerrar a navegação e salvar no histórico?')) stopDrive(); };
+// Encerrar: toque uma vez (o botão pede confirmação) e toque de novo.
+// Sem a janelinha do navegador, que no iPhone às vezes não aparece.
+let stopArmed = 0;
+$('#btnStop').onclick = () => {
+  const b = $('#btnStop');
+  if (Date.now() - stopArmed < 8000) {
+    stopArmed = 0;
+    b.classList.remove('armed');
+    b.textContent = '⏹ Encerrar';
+    stopDrive();
+    return;
+  }
+  stopArmed = Date.now();
+  b.classList.add('armed');
+  b.textContent = '⏹ Toque de novo p/ encerrar';
+  navigator.vibrate?.(30);
+  setTimeout(() => {
+    if (Date.now() - stopArmed >= 8000) { b.classList.remove('armed'); b.textContent = '⏹ Encerrar'; }
+  }, 8100);
+};
 $('#btnRecenter').onclick = () => { S.follow = true; if (S.lastFix) map.setView([S.lastFix.lat, S.lastFix.lon], 16); };
 $('#btnDriveMusic').onclick = () => trilhaToggle();
 
@@ -1615,7 +1636,7 @@ function renderSettings() {
   $('#sFuelGap').value = s.fuelGapKm;
   $('#sPoiRadius').value = s.poiRadius;
   navigator.storage?.estimate?.().then((e) => {
-    $('#storageInfo').textContent = `Espaço usado pelo app: ${(e.usage / 1048576).toFixed(1)} MB`;
+    $('#storageInfo').textContent = `Espaço usado pelo app: ${(e.usage / 1048576).toFixed(1)} MB · versão ${APP_VERSION}`;
   });
 }
 // Testa a chave da TomTom procurando um lugar conhecido.

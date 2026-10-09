@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v30';
+const VERSION = 'v31';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 6000;
@@ -60,7 +60,10 @@ self.addEventListener('fetch', (e) => {
   // sem internet ou sinal fraco, abre na hora pela cópia salva.
   e.respondWith((async () => {
     const cache = await caches.open(APP);
-    const net = fetch(e.request).then((res) => {
+    // no-cache: confere com o servidor em vez de usar a cópia de até 10 min do
+    // navegador (senão a versão nova demorava a chegar).
+    const req = url.origin === location.origin ? fetch(url.href, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(e.request);
+    const net = req.then((res) => {
       if (res.ok && (url.origin === location.origin || url.hostname === 'unpkg.com')) cache.put(e.request, res.clone());
       return res;
     });
