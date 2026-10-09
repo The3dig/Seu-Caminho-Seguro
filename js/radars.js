@@ -5,6 +5,15 @@ import { dist } from './geo.js';
 
 let cache = null;
 
+// Além de radares, a base guarda perigos fixos que você marca na estrada
+// (campo kind; sem kind = radar). Avisam do mesmo jeito, sem internet.
+export const HAZARDS = {
+  buraco: { icon: '🕳️', word: 'Buraco', name: 'buraco' },
+  lombada: { icon: '🚧', word: 'Lombada', name: 'lombada' },
+  perigo: { icon: '⚠️', word: 'Perigo', name: 'trecho perigoso' },
+};
+export const isHazard = (r) => !!(r && r.kind && HAZARDS[r.kind]);
+
 export async function all() {
   if (!cache) cache = (await kv.get('radars')) || [];
   return cache;
@@ -25,18 +34,19 @@ export function status(r) {
   return r.source === 'osm' ? 'do mapa (não confirmado)' : 'novo';
 }
 
-function findNear(list, p, maxM = 40) {
+function findNear(list, p, maxM = 40, kind = null) {
   let best = null, bestD = maxM;
   for (const r of list) {
+    if ((r.kind || null) !== (kind || null)) continue; // buraco não se junta com radar
     const d = dist(r, p);
     if (d <= bestD) { best = r; bestD = d; }
   }
   return best;
 }
 
-export async function add({ lat, lon, limit = null, heading = null, source = 'meu', osmId = null, note = '' }) {
+export async function add({ lat, lon, limit = null, heading = null, source = 'meu', osmId = null, note = '', kind = null }) {
   const list = await all();
-  const near = findNear(list, { lat, lon }, 35);
+  const near = findNear(list, { lat, lon }, 35, kind);
   if (near) {
     near.confirmations++;
     near.lastSeen = Date.now();
@@ -47,6 +57,7 @@ export async function add({ lat, lon, limit = null, heading = null, source = 'me
   }
   const r = {
     id: uid(), lat, lon, limit, heading, source, osmId, note,
+    ...(kind ? { kind } : {}),
     confirmations: source === 'meu' ? 1 : 0,
     denials: 0,
     created: Date.now(),
@@ -163,8 +174,10 @@ export async function importList(items) {
   const list = await all();
   let added = 0;
   for (const it of items) {
-    if (findNear(list, it, 30)) continue;
+    const kind = HAZARDS[it.kind] ? it.kind : null;
+    if (findNear(list, it, 30, kind)) continue;
     list.push({
+      ...(kind ? { kind } : {}),
       id: uid(), lat: +it.lat, lon: +it.lon, limit: it.limit ?? null, heading: it.heading ?? null,
       source: it.source || 'importado', osmId: it.osmId || null, note: it.note || '',
       confirmations: it.confirmations ?? 0, denials: it.denials ?? 0,

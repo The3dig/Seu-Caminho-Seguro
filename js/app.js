@@ -164,6 +164,14 @@ async function drawRadars() {
   const list = await Radars.all();
   for (const r of list) {
     const active = Radars.isActive(r);
+    const h = Radars.HAZARDS[r.kind];
+    if (h) {
+      if (!active) continue;
+      L.marker([r.lat, r.lon], { icon: icon(h.icon, 'mk hazard', 26) })
+        .bindPopup(`<b>${h.icon} ${h.word}</b><br>marcado por você<br>✅ ${r.confirmations} · ❌ ${r.denials}`)
+        .addTo(layers.radars);
+      continue;
+    }
     const cls = `mk radar${active ? '' : ' off'}${r.confirmations ? '' : ' pending'}`;
     L.marker([r.lat, r.lon], { icon: icon(r.limit || '📷', cls, 28) })
       .bindPopup(`<b>Radar ${r.limit ? r.limit + ' km/h' : ''}</b><br>${Radars.status(r)}<br>✅ ${r.confirmations} · ❌ ${r.denials}`)
@@ -514,7 +522,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v34';
+const APP_VERSION = 'v35';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1035,7 +1043,7 @@ async function startDrive(trip, simulate, resume = null) {
   requestWakeLock();
   if (simulate && trip) startSim(trip);
   else startGps();
-  const nR = S.nav.routeRadars.length;
+  const nR = S.nav.routeRadars.filter((x) => !Radars.isHazard(x.r)).length;
   if (resume) return Voice.speak('Viagem retomada. A rota continua a mesma.');
   Voice.speak(trip ? departureSpeech(trip, nR) : `Modo alerta de radar ativado. ${safetyReminder()} Boa viagem!`, { force: true });
   const night = new Date().getHours() >= 18 || new Date().getHours() < 6;
@@ -1286,8 +1294,10 @@ function render(st) {
   if (st.radar) {
     ra.hidden = false;
     ra.classList.toggle('over', !!st.radar.over);
+    ra.classList.toggle('hazard', !!st.radar.hazard);
+    $('#raTitle').textContent = st.radar.hazard ? st.radar.hazard.word.toUpperCase() : 'RADAR';
     $('#raDist').textContent = fmtDist(st.radar.d);
-    $('#raLimit').textContent = st.radar.limit || '!';
+    $('#raLimit').textContent = st.radar.hazard ? st.radar.hazard.icon : st.radar.limit || '!';
   } else ra.hidden = true;
 
   if (!S.nav?.trip) return;
@@ -1480,7 +1490,7 @@ $('#stepsClose').onclick = () => { $('#stepsPanel').hidden = true; };
 
 // ---------- confirmar radar após passar ----------
 function askConfirm(r) {
-  S.rec?.radarPassed();
+  if (!Radars.isHazard(r)) S.rec?.radarPassed();
   S.confirmQueue.push(r);
   if (S.confirmQueue.length === 1) nextConfirm();
 }
@@ -1489,7 +1499,8 @@ function nextConfirm() {
   const r = S.confirmQueue[0];
   const box = $('#confirmBox');
   if (!r) { box.hidden = true; return; }
-  $('#confirmText').textContent = `Passou pelo radar${r.limit ? ' de ' + r.limit + ' km/h' : ''}. Ele estava lá?`;
+  const h = Radars.HAZARDS[r.kind];
+  $('#confirmText').textContent = h ? `Passou pelo ${h.name}. Ainda está lá?` : `Passou pelo radar${r.limit ? ' de ' + r.limit + ' km/h' : ''}. Ele estava lá?`;
   box.hidden = false;
   const bar = box.querySelector('.confirm-timer div');
   bar.style.transition = 'none';
@@ -1536,16 +1547,37 @@ $('#btnMark').onclick = async () => {
       $('#markBox').hidden = true;
     };
   }
+  // Não era radar: troca a marcação por buraco/lombada/perigo.
+  for (const b of $('#hazChips').querySelectorAll('button')) {
+    b.onclick = async () => {
+      $('#markBox').hidden = true;
+      await undoMark(r);
+      const hz = await Radars.add({ lat: r.lat, lon: r.lon, heading: r.heading, source: 'meu', kind: b.dataset.k });
+      S.lastMarked = hz;
+      S.nav?.addRadar(hz);
+      drawRadars();
+      const h = Radars.HAZARDS[b.dataset.k];
+      Voice.speak(`${h.word} marcado.`);
+      toast(`${h.icon} ${h.word} marcado — vai avisar aqui nas próximas viagens.`, 3500);
+    };
+  }
   $('#markBox').hidden = false;
   clearTimeout(markTimer);
   markTimer = setTimeout(() => { $('#markBox').hidden = true; }, 12000);
 };
+// Desfaz a última marcação (se era um radar que já existia, só tira a confirmação).
+async function undoMark(r) {
+  if (r.confirmations > 1) await Radars.update(r.id, { confirmations: r.confirmations - 1 });
+  else {
+    await Radars.remove(r.id);
+    S.nav?.removeRadar(r.id);
+  }
+}
 $('#btnUndoMark').onclick = async () => {
   if (S.lastMarked) {
-    if (S.lastMarked.confirmations > 1) await Radars.update(S.lastMarked.id, { confirmations: S.lastMarked.confirmations - 1 });
-    else await Radars.remove(S.lastMarked.id);
-    S.nav?.removeRadar(S.lastMarked.id);
+    await undoMark(S.lastMarked);
     S.lastMarked = null;
+    drawRadars();
   }
   $('#markBox').hidden = true;
   toast('Marcação desfeita.', 2000);
@@ -1565,9 +1597,9 @@ async function renderRadarList() {
   const ul = $('#radarList');
   ul.innerHTML = items.map((r) => `
     <li data-id="${r.id}">
-      <div class="mk radar ${Radars.isActive(r) ? '' : 'off'}">${r.limit || '?'}</div>
+      <div class="mk ${Radars.HAZARDS[r.kind] ? 'hazard' : 'radar'} ${Radars.isActive(r) ? '' : 'off'}">${Radars.HAZARDS[r.kind]?.icon || r.limit || '?'}</div>
       <div class="grow">
-        <div class="title">${r.limit ? r.limit + ' km/h' : 'Limite não informado'} <span class="tag">${Radars.status(r)}</span></div>
+        <div class="title">${Radars.HAZARDS[r.kind] ? Radars.HAZARDS[r.kind].word : r.limit ? r.limit + ' km/h' : 'Limite não informado'} <span class="tag">${Radars.status(r)}</span></div>
         <div class="sub">✅ ${r.confirmations} · ❌ ${r.denials} · ${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}${r.note ? ' · ' + esc(r.note) : ''}</div>
       </div>
       <button class="btn" data-a="map">🗺</button><button class="btn" data-a="edit">✏️</button><button class="btn" data-a="del">🗑</button>

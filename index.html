@@ -133,7 +133,7 @@
     <div class="radar-alert" id="radarAlert" hidden>
       <div class="radar-sign"><span id="raLimit">!</span></div>
       <div>
-        <div class="ra-title">RADAR</div>
+        <div class="ra-title" id="raTitle">RADAR</div>
         <div class="ra-dist" id="raDist">--</div>
       </div>
     </div>
@@ -176,6 +176,12 @@
     <div class="confirm" id="markBox" hidden>
       <p>📷 Radar marcado! Qual o limite?</p>
       <div class="chips" id="limitChips"></div>
+      <p class="sub" style="margin-top:10px">Não era radar? É um:</p>
+      <div class="chips" id="hazChips">
+        <button class="btn" data-k="buraco">🕳️ Buraco</button>
+        <button class="btn" data-k="lombada">🚧 Lombada</button>
+        <button class="btn" data-k="perigo">⚠️ Perigo</button>
+      </div>
       <button class="btn link" id="btnUndoMark">desfazer</button>
     </div>
   </section>

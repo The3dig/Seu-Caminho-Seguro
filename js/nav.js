@@ -8,7 +8,7 @@ function sayDist(m) {
   if (km < 1.05) return '1 quilômetro';
   return `${String(km).replace('.', ',')} quilômetros`;
 }
-import { isActive } from './radars.js';
+import { isActive, isHazard, HAZARDS } from './radars.js';
 import { speak, beep } from './voice.js';
 import { plannedStops } from './planner.js';
 import { limitAt } from './pois.js';
@@ -27,6 +27,8 @@ export class Nav {
     this.radarRadius = this.insist ? 60 : RADAR_ON_ROUTE_M;
     // A pé, os avisos começam bem mais perto para dar pra testar num quarteirão.
     this.thresholds = this.walk ? [300, 150, 50] : [...settings.alertDist].sort((a, b) => b - a);
+    // Buraco/lombada/perigo: aviso mais perto (não precisa de 1 km de antecedência).
+    this.hazThresholds = this.walk ? [100, 40] : [400, 150];
     this.line = trip ? makeLine(trip.pts.map(([lat, lon]) => ({ lat, lon }))) : null;
     this.allRadars = radars;
     this.routeRadars = this.line ? this.projectRadars(radars) : [];
@@ -63,7 +65,7 @@ export class Nav {
   projectRadars(radars) {
     const out = [];
     for (const r of radars) {
-      if (!isActive(r) && !this.insist) continue;
+      if (!isActive(r) && (!this.insist || isHazard(r))) continue; // buraco consertado: some
       const loc = locate(this.line, r, 0, this.line.pts.length - 1, this.radarRadius);
       if (!loc) continue;
       // Radar com sentido conhecido: ignora se for da pista contrária.
@@ -160,12 +162,19 @@ export class Nav {
 
     // Radares
     if (!this.offRoute) {
-      const ahead = this.routeRadars.find((x) => x.along > p - 15);
+      // O próximo radar e o próximo buraco/lombada/perigo, cada um no seu tempo.
+      const ahead = this.routeRadars.find((x) => x.along > p - 15 && !isHazard(x.r));
       if (ahead) {
         const d = ahead.along - p;
         const lim = ahead.r.limit || limitAt(this.limits, ahead.along);
         this.alertRadar(ahead.r, d, kmh, lim);
         if (d <= this.thresholds[0]) state.radar = { r: ahead.r, d, limit: lim, over: lim && kmh > lim + 2 };
+      }
+      const haz = this.routeRadars.find((x) => x.along > p - 15 && isHazard(x.r));
+      if (haz) {
+        const d = haz.along - p;
+        this.alertRadar(haz.r, d, kmh);
+        if (d <= this.hazThresholds[0] && (!state.radar || d < state.radar.d)) state.radar = { r: haz.r, d, hazard: HAZARDS[haz.r.kind] }; // o mais perto aparece
       }
       for (const x of this.routeRadars) {
         if (x.along > p - 40) break;
@@ -271,6 +280,7 @@ export class Nav {
   }
 
   alertRadar(r, d, kmh, limit = r.limit) {
+    if (isHazard(r)) return this.alertHazard(r, d);
     const last = this.spoken.get(r.id) ?? Infinity;
     const crossed = this.thresholds.filter((t) => d <= t);
     if (crossed.length) {
@@ -299,6 +309,20 @@ export class Nav {
         if (d > 150) speak('Reduza a velocidade!', { urgent: true, force: this.insist });
       }
     }
+  }
+
+  // "Buraco em 400 metros." … "Buraco!" — bipe mais grave que o do radar.
+  alertHazard(r, d) {
+    const h = HAZARDS[r.kind];
+    const last = this.spoken.get(r.id) ?? Infinity;
+    const crossed = this.hazThresholds.filter((t) => d <= t);
+    if (!crossed.length) return;
+    const t = crossed[crossed.length - 1];
+    if (t >= last) return;
+    this.spoken.set(r.id, t);
+    const force = this.insist;
+    beep({ times: 2, freq: 520, force });
+    speak(t === this.hazThresholds[this.hazThresholds.length - 1] ? `${h.word}!` : `${h.word} em ${sayDist(d)}.`, { urgent: true, force });
   }
 
   announceStep(step, d, kmh) {
@@ -348,9 +372,9 @@ export class Nav {
   // ---------- Sem rota: só radar ----------
   updateFree(f, kmh, state) {
     if (f.heading == null || kmh < (this.walk ? 1.5 : 8)) return;
-    let best = null;
+    const bests = {};
     for (const r of this.allRadars) {
-      if (!isActive(r) && !this.insist) continue;
+      if (!isActive(r) && (!this.insist || isHazard(r))) continue;
       const d = dist(f, r);
       if (d > 1300) {
         this.freeNear.delete(r.id);
@@ -363,15 +387,21 @@ export class Nav {
       const prevMin = this.freeNear.get(r.id);
       if (ahead) {
         this.freeNear.set(r.id, Math.min(prevMin ?? d, d));
-        if (!best || d < best.d) best = { r, d };
+        const k = isHazard(r) ? 'h' : 'r'; // radar e perigo não escondem um ao outro
+        if (!bests[k] || d < bests[k].d) bests[k] = { r, d };
       } else if (prevMin != null && prevMin < 120 && d > 50 && this.spoken.has(r.id) && !this.asked.has(r.id)) {
         this.asked.add(r.id);
         this.ui.askConfirm(r);
       }
     }
+    const best = bests.r, bh = bests.h;
     if (best) {
       this.alertRadar(best.r, best.d, kmh);
       if (best.d <= this.thresholds[0]) state.radar = { ...best, limit: best.r.limit, over: best.r.limit && kmh > best.r.limit + 2 };
+    }
+    if (bh) {
+      this.alertRadar(bh.r, bh.d, kmh);
+      if (bh.d <= this.hazThresholds[0] && (!state.radar || bh.d < state.radar.d)) state.radar = { ...bh, hazard: HAZARDS[bh.r.kind] };
     }
   }
 

@@ -405,3 +405,7 @@ body.picking #map { bottom: 0; }
 
 .tip-card { background: #13324a; border: 1px solid #2f6d96; border-radius: 14px; padding: 12px; margin: 8px 0; display: flex; flex-direction: column; gap: 10px; }
 .tip-card .sub { opacity: .8; font-size: 13px; margin-top: 2px; }
+.radar-alert.hazard { background: #4a3a06; border-color: #f2c94c; }
+.radar-alert.hazard .radar-sign { border-color: #f2c94c; background: #ffe9a8; font-size: 34px; }
+.radar-alert.hazard .ra-title { color: #ffe08a; }
+.mk.hazard { font-size: 15px; background: #ffe9a8; border: 3px solid #f2c94c; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; text-shadow: none; }
