@@ -329,3 +329,5 @@ body.picking #map { bottom: 0; }
 .steps-panel li.next { outline: 2px solid var(--accent); }
 .drive .confirm { z-index: 8; }
 .steps-panel .list li .title { white-space: normal; }
+.steps-panel li.toll { background: #2a2410; border: 1px solid #5a4a1f; cursor: pointer; }
+#stepsTolls { color: var(--gold); font-size: 13px; }

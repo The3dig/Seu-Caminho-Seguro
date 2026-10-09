@@ -1,6 +1,6 @@
 import { getSettings, saveSettings, listTrips, saveTrip, loadTrip, deleteTrip, uid, kv } from './store.js';
 import { geocode, route, cityAt, addressAt } from './routing.js';
-import { fetchAlongRoute, fuelGaps, CATEGORIES, lodgingNear, radarsNear, fetchSpeedLimits } from './pois.js';
+import { fetchAlongRoute, fuelGaps, CATEGORIES, lodgingNear, radarsNear, fetchSpeedLimits, tollPlazas } from './pois.js';
 import { buildPlan, DEFAULT_PREFS, money } from './planner.js';
 import { makeLine, locate, pointAt, fmtDist, fmtDur, fmtClock } from './geo.js';
 import * as Radars from './radars.js';
@@ -857,9 +857,17 @@ async function renderSummary(trip) {
       <details style="margin-top:10px"><summary>⛽ Postos na rota (${fuels.length})</summary><ul class="list">${listItems(fuels)}</ul></details>
       <details><summary>🌙 Abertos 24h (${night.length})</summary><ul class="list">${listItems(night)}</ul></details>
       <details><summary>🍽️ Restaurantes (${count('food')})</summary><ul class="list">${listItems(pois.filter((p) => p.cat === 'food'))}</ul></details>
+      ${(() => {
+        const tl = tollPlazas(applyTollPrices(pois));
+        if (!tl.length) return '';
+        const tot = tl.reduce((a, t) => a + (t.price ?? tollAvg()), 0);
+        return `<details><summary>💰 Pedágios (${tl.length}) · ${tl.some((t) => t.price == null) ? '~' : ''}${moneyBR(tot)}</summary><ul class="list">${tl.map((t, i) => `<li data-tl="${i}"><span>💰</span><div class="grow"><div class="title">${esc(t.name)}${t.freeFlow ? ' (free-flow)' : ''}</div><div class="sub">km ${(t.along / 1000).toFixed(0)} · ${t.price != null ? moneyBR(t.price) : `~${moneyBR(tollAvg())} estimativa — toque para informar`}</div></div></li>`).join('')}</ul></details>`;
+      })()}
       <details><summary>🛏️ Paradas e hotéis (${count('rest') + count('lodging')})</summary><ul class="list">${listItems(pois.filter((p) => p.cat === 'rest' || p.cat === 'lodging'))}</ul></details>
     </div>`;
   for (const li of $('#tripSummary').querySelectorAll('li[data-pi]')) li.onclick = () => openPoi(pois[+li.dataset.pi], trip);
+  const tlList = tollPlazas(pois);
+  for (const li of $('#tripSummary').querySelectorAll('li[data-tl]')) li.onclick = async () => { if (await askTollPrice(tlList[+li.dataset.tl])) renderSummary(trip); };
   $('#btnStart').onclick = () => startDrive(trip, false);
   $('#btnSim').onclick = () => startDrive(trip, true);
   $('#btnRefresh').onclick = () => refreshTrip(trip);
@@ -1164,6 +1172,32 @@ function card(k, p, extra = '', far = false) {
     <div class="n">${esc(p.name)}${p.h24 ? ' · 24h' : ''} · ${fmtDur(p.sec)}</div>${extra ? `<div class="n" style="color:var(--gold)">${extra}</div>` : ''}</div>`;
 }
 
+// ---------- valores de pedágio que você informou (ficam para as próximas viagens) ----------
+let tollPrices = {};
+kv.get('tollPrices').then((v) => { tollPrices = v || {}; });
+const tollKey = (p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
+const tollAvg = () => S.settings.tripPrefs?.tollAvg ?? 12;
+const moneyBR = (v) => `R$ ${v.toFixed(2).replace('.', ',')}`;
+// Aplica nos pedágios da viagem os valores que você já informou.
+function applyTollPrices(pois) {
+  for (const p of pois || []) if (p.cat === 'toll' && tollPrices[tollKey(p)] != null) p.price = tollPrices[tollKey(p)];
+  return pois;
+}
+async function askTollPrice(plaza) {
+  const cur = tollPrices[tollKey(plaza)] ?? plaza.price;
+  const v = prompt(`Quanto custa este pedágio (carro)?\n${plaza.name !== 'Pedágio' ? plaza.name + '\n' : ''}Ex.: 12,40`, cur != null ? String(cur).replace('.', ',') : '');
+  if (v === null) return false;
+  const n = parseFloat(v.replace(',', '.'));
+  if (!(n >= 0)) return false;
+  // Guarda para todas as cabines da mesma praça (sentidos/cabines a < 1 km).
+  for (const p of (S.nav?.trip?.pois || S.trip?.pois || []).filter((x) => x.cat === 'toll' && Math.abs(x.along - plaza.along) < 1000)) tollPrices[tollKey(p)] = n;
+  tollPrices[tollKey(plaza)] = n;
+  await kv.set('tollPrices', tollPrices);
+  applyTollPrices(S.nav?.trip?.pois || S.trip?.pois);
+  toast(`💰 Pedágio salvo: ${moneyBR(n)}. Vale para as próximas viagens.`, 3000);
+  return true;
+}
+
 // ---------- lista de manobras (tocar no banner verde) ----------
 let stepsDrawnAt = -1e9;
 function renderSteps(st) {
@@ -1173,16 +1207,24 @@ function renderSteps(st) {
   if (st && Math.abs(p - stepsDrawnAt) < 30) return; // não redesenha a cada metro
   stepsDrawnAt = p;
   const avg = nav.trip.distance / nav.trip.duration;
+  const tolls = tollPlazas(applyTollPrices(nav.pois)).filter((t) => t.along > p - 10);
   const items = [
     ...nav.steps.filter((s) => s.along > p - 10).map((s) => ({ along: s.along, arrow: s.arrow, text: s.type === 'arrive' ? 'Chegada ao destino' : s.text })),
     ...nav.routeRadars.filter((x) => x.along > p - 10).map((x) => ({ along: x.along, arrow: '📷', radar: true, text: `Radar${(x.r.limit || '') && ` · ${x.r.limit} km/h`}` })),
+    ...tolls.map((t) => ({ along: t.along, arrow: '💰', toll: t, text: `Pedágio${t.name && t.name !== 'Pedágio' ? ' ' + t.name : ''}${t.freeFlow ? ' (free-flow, sem cabine)' : ''} · ${t.price != null ? moneyBR(t.price) : `~${moneyBR(tollAvg())} (estimativa — toque para informar)`}` })),
   ].sort((a, b) => a.along - b.along);
+  const total = tolls.reduce((a, t) => a + (t.price ?? tollAvg()), 0);
+  const guess = tolls.some((t) => t.price == null);
+  $('#stepsTolls').textContent = tolls.length ? `💰 ${tolls.length} pedágio${tolls.length > 1 ? 's' : ''} pela frente · ${guess ? '~' : ''}${moneyBR(total)}` : '';
   $('#stepsList').innerHTML = items.length ? items.map((it, i) => `
-    <li class="${it.radar ? 'radar' : ''} ${i === 0 ? 'next' : ''}">
+    <li class="${it.radar ? 'radar' : ''}${it.toll ? 'toll' : ''} ${i === 0 ? 'next' : ''}" ${it.toll ? `data-toll="${i}"` : ''}>
       <span class="st-arrow">${it.arrow}</span>
       <div class="grow"><div class="title">${esc(it.text)}</div><div class="sub">~${fmtDur((it.along - p) / avg)}</div></div>
       <span class="st-d">${fmtDist(Math.max(0, it.along - p))}</span>
     </li>`).join('') : '<p class="hint">Nenhuma manobra pela frente — siga em frente até o destino.</p>';
+  for (const li of $('#stepsList').querySelectorAll('[data-toll]')) {
+    li.onclick = async () => { if (await askTollPrice(items[+li.dataset.toll].toll)) { stepsDrawnAt = -1e9; renderSteps(); } };
+  }
 }
 $('#turn').onclick = () => {
   const panel = $('#stepsPanel');
@@ -1522,6 +1564,7 @@ $('#tpBuild').onclick = async () => {
     const prefs = tpPrefs();
     S.settings.tripPrefs = prefs;
     saveSettings(S.settings);
+    applyTollPrices(trip.pois);
     trip.plan = buildPlan(trip, trip.stops, prefs, new Date($('#tpDepart').value || Date.now()));
     await saveTrip(trip);
     S.trip = trip;
