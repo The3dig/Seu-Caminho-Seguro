@@ -2,7 +2,11 @@
 // "posto Registro", "farmácia". Primeiro tenta os buscadores de endereço;
 // se não acharem exatamente, separa "o quê" de "onde" e procura no mapa
 // (OpenStreetMap) pelo tipo de lugar e por sinônimos, dentro da cidade.
-import { geocode, fetchT, photon, parseCoords } from './routing.js';
+import { geocode, fetchT, photon, parseCoords, tomtom } from './routing.js';
+
+// Chave da TomTom (Ajustes ou config.js). Sem chave: só OpenStreetMap.
+let ttKey = '';
+export function setSearchKey(k) { ttKey = (k || '').trim(); sugCache.clear(); }
 
 const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 // Só letras e números: "McDonald's" = "mcdonalds".
@@ -242,6 +246,19 @@ export async function suggestPlaces(text, near = null, onUpdate = () => {}) {
     for (const r of list) if (SETTLE_OR_LANDMARK.has(r.cls) && n < 3) r.fame = ++n;
     return list;
   };
+  // Com a chave da TomTom: base comercial primeiro (perto de você + famosos no
+  // Brasil). Se falhar (sem internet, cota do dia acabou), segue com o OpenStreetMap.
+  if (ttKey) {
+    const tt = await Promise.allSettled([
+      tomtom(qtext, near, ttKey, { limit: 12 }).then(push),
+      tomtom(qtext, near, ttKey, { global: true, limit: 5 }).then((l) => push(famous(l))),
+    ]);
+    if (best.length && best.some((r) => r.rank > 0)) {
+      sugCache.set(key, best);
+      return best;
+    }
+    if (tt.every((r) => r.status === 'rejected')) console.warn('TomTom falhou, usando OpenStreetMap', tt[0].reason);
+  }
   const tasks = [];
   // 1) sua região (~50 km); 2) perto de você primeiro; 3) famosos no Brasil; 4) cidades com esse nome
   if (near) tasks.push(photon(qtext, near, { area: 0.45, ms: 7000 }).then(push));

@@ -69,6 +69,16 @@ Requer **Spotify Premium** (exigência do Spotify para apps que controlam a mús
 
 Dica: baixe a playlist no app do Spotify para ela tocar nos trechos sem sinal.
 
+## Busca melhor com a TomTom (opcional, grátis)
+
+A busca padrão usa o OpenStreetMap, que às vezes não tem lojas e lugares novos. Com uma chave grátis da TomTom (empresa de GPS que fornece mapas para carros), a busca fica parecida com a do Waze.
+
+1. Entre em [developer.tomtom.com](https://developer.tomtom.com) → **Register** (só e-mail, sem cartão) e confirme o e-mail.
+2. No painel (**Dashboard → Keys**) já existe uma chave pronta (“My first API key”). Copie.
+3. No app: **Ajustes → 🔎 Busca melhor (TomTom)** → cole → **Testar** → **Salvar**.
+
+Para todo mundo que usar o app sem precisar colar nada, coloque a chave em `js/config.js` (`tomtomKey`). Todos usam a sua cota grátis diária; sem cartão, não há cobrança — se a cota acabar, a busca volta sozinha para o OpenStreetMap até o dia seguinte.
+
 ## Antes de viajar (com internet)
 
 1. **Viagem** → digite o destino → **Traçar rota** → escolha a rota → **Preparar viagem offline**.

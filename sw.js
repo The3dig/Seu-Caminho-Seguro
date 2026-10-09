@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v27';
+const VERSION = 'v28';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 6000;
@@ -54,7 +54,7 @@ self.addEventListener('fetch', (e) => {
   }
 
   // APIs de rota/busca: sempre online (dados ficam salvos no IndexedDB).
-  if (/nominatim|router\.project-osrm|routing\.openstreetmap|overpass|spotify|photon/.test(url.hostname)) return;
+  if (/nominatim|router\.project-osrm|routing\.openstreetmap|overpass|spotify|photon|tomtom/.test(url.hostname)) return;
 
   // App: com internet pega sempre a versão mais nova (espera até 3 s);
   // sem internet ou sinal fraco, abre na hora pela cópia salva.

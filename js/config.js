@@ -4,4 +4,8 @@ export const CONFIG = {
   // segredo). Preenchido aqui, qualquer pessoa só toca em "Conectar Spotify",
   // sem configurar nada. Vazio = cada um pode colar o seu em Músicas.
   spotifyClientId: '',
+  // Chave grátis da TomTom (developer.tomtom.com) para a busca de lugares.
+  // Preenchida aqui, vale para todo mundo que abrir o app. Vazio = cada um
+  // pode colar a sua em Ajustes; sem chave, usa a busca gratuita do OpenStreetMap.
+  tomtomKey: '',
 };

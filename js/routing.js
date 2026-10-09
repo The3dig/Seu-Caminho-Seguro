@@ -73,6 +73,36 @@ export async function photon(text, near, { area = 0, ms = 12000, global = false,
     });
 }
 
+// TomTom (base comercial, igual à dos GPS de carro): entende erros de digitação,
+// marcas e lugares famosos. global = sem puxar para perto de você.
+const TT_LANDMARK = /tourist|place of worship|church|cathedral|monument|museum|stadium|airport|park|beach|historic/i;
+export async function tomtom(text, near, key, { ms = 8000, limit = 10, global = false } = {}) {
+  const pos = near && !global ? `&lat=${near.lat}&lon=${near.lon}` : '';
+  const url = `https://api.tomtom.com/search/2/search/${encodeURIComponent(text.replace(/[/?#]/g, ' '))}.json?key=${encodeURIComponent(key)}&countrySet=BR&language=pt-BR&typeahead=true&limit=${limit}${pos}`;
+  const res = await fetchT(url, {}, ms);
+  if (!res.ok) throw new Error('tomtom ' + res.status);
+  return ((await res.json()).results || []).map((r) => {
+    const a = r.address || {};
+    const street = [a.streetName, a.streetNumber].filter(Boolean).join(', ');
+    let name, cls;
+    if (r.type === 'POI') {
+      name = r.poi?.name;
+      const cats = (r.poi?.categories || []).join(' ') + ' ' + (r.poi?.classifications || []).map((c) => c.code).join(' ');
+      cls = TT_LANDMARK.test(cats.replace(/_/g, ' ')) ? 'landmark' : 'poi';
+    } else if (r.type === 'Geography') {
+      name = a.municipalitySubdivision && r.entityType === 'MunicipalitySubdivision' ? a.municipalitySubdivision : a.municipality || a.countrySubdivision || a.freeformAddress;
+      cls = /^Municipality$/.test(r.entityType) ? 'city' : 'addr';
+    } else if (r.type === 'Street' || r.type === 'Cross Street') {
+      name = a.streetName || a.freeformAddress; cls = 'street';
+    } else {
+      name = street || a.freeformAddress; cls = 'addr';
+    }
+    const label = [name, street !== name ? street : '', a.municipalitySubdivision !== name ? a.municipalitySubdivision : '', a.municipality !== name ? a.municipality : '', a.countrySubdivision]
+      .filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).join(', ');
+    return { lat: r.position.lat, lon: r.position.lon, label: label || 'Lugar', cls, tt: true };
+  }).filter((r) => r.lat != null);
+}
+
 // Que tipo de lugar é: cidade, rua, ponto turístico/igreja famoso, comércio ou endereço.
 function placeClass(p) {
   const k = p.osm_key, v = p.osm_value;

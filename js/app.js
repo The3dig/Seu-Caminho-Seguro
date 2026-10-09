@@ -10,7 +10,7 @@ import * as Spotify from './spotify.js';
 import { Nav } from './nav.js';
 import * as Places from './places.js';
 import { CONFIG } from './config.js';
-import { searchPlaces, suggestPlaces } from './search.js';
+import { searchPlaces, suggestPlaces, setSearchKey } from './search.js';
 import * as Cities from './cities.js';
 import { Mascot, PORTRAIT } from './mascot.js';
 
@@ -1584,6 +1584,8 @@ $('#mShuffle').onclick = () => { Music.shuffle(); renderTracks(); toast('🔀 Or
 function renderSettings() {
   const s = S.settings;
   $('#sName').value = s.appName;
+  $('#sTomtom').value = CONFIG.tomtomKey ? '' : (s.tomtomKey || '');
+  $('#sTomtom').placeholder = CONFIG.tomtomKey ? '✅ chave já embutida no app' : 'cole aqui a chave da TomTom';
   $('#sVoice').checked = s.voice;
   $('#sBeep').checked = s.beep;
   $('#sIntroMusic').checked = s.introMusic;
@@ -1607,6 +1609,20 @@ function renderSettings() {
     $('#storageInfo').textContent = `Espaço usado pelo app: ${(e.usage / 1048576).toFixed(1)} MB`;
   });
 }
+// Testa a chave da TomTom procurando um lugar conhecido.
+$('#btnTestTomtom').onclick = async () => {
+  const key = $('#sTomtom').value.trim() || CONFIG.tomtomKey;
+  if (!key) return toast('Cole a chave da TomTom primeiro.', 3000);
+  const info = $('#tomtomInfo');
+  info.textContent = '🔎 Testando…';
+  try {
+    const { tomtom } = await import('./routing.js');
+    const r = await tomtom("McDonald's", S.here, key, { limit: 3 });
+    info.textContent = r.length ? `✅ Funcionou! Ex.: ${r[0].label}. Toque em Salvar.` : '✅ A chave funciona (não achou o exemplo aqui perto). Toque em Salvar.';
+  } catch (e) {
+    info.textContent = /40[13]/.test(e.message) ? '❌ A TomTom recusou a chave. Confira se copiou inteira (sem espaços).' : '⚠ Não consegui falar com a TomTom agora (internet?). Tente de novo.';
+  }
+};
 $('#btnSaveSettings').onclick = async () => {
   const s = S.settings;
   s.appName = $('#sName').value.trim() || 'Seu Caminho Seguro';
@@ -1622,6 +1638,8 @@ $('#btnSaveSettings').onclick = async () => {
   s.insistent = $('#sInsist').checked;
   s.voiceName = $('#sVoiceName').value;
   s.voiceRate = parseFloat($('#sVoiceRate').value) || 1.05;
+  s.tomtomKey = $('#sTomtom').value.trim();
+  setSearchKey(s.tomtomKey || CONFIG.tomtomKey);
   s.askStopReason = $('#sAskStop').checked;
   applyNight();
   const ad = $('#sAlert').value.split(/[,; ]+/).map((x) => parseInt(x, 10)).filter((x) => x >= 50 && x <= 3000);
@@ -2594,6 +2612,7 @@ $('#btnTestVoice').onclick = () => {
 // ================= Início =================
 async function init() {
   S.settings = await getSettings();
+  setSearchKey(S.settings.tomtomKey || CONFIG.tomtomKey);
   Voice.configure(S.settings);
   applyName();
   greet();
