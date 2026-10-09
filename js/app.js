@@ -1068,6 +1068,7 @@ function stopDrive() {
   S.wakeLock = null;
   layers.me.clearLayers();
   $('#confirmBox').hidden = $('#markBox').hidden = $('#stopBox').hidden = true;
+  $('#stepsPanel').hidden = true;
   curStop = null;
   S.confirmQueue = [];
   show('v-plan');
@@ -1122,6 +1123,7 @@ function render(st) {
   $('#offRoute').hidden = !st.off;
   if (st.off) $('#offDist').textContent = `(${fmtDist(st.offDist)})`;
   // manobra
+  if (!$('#stepsPanel').hidden) renderSteps(st);
   if (st.step) {
     $('#turnArrow').textContent = st.step.arrow;
     $('#turnDist').textContent = fmtDist(st.stepDist);
@@ -1161,6 +1163,33 @@ function card(k, p, extra = '', far = false) {
   return `<div class="poi ${far ? 'far' : ''}" data-i="${S.cardPois.length - 1}"><div class="k">${k}</div><div class="v">${fmtDist(p.d)}</div>
     <div class="n">${esc(p.name)}${p.h24 ? ' · 24h' : ''} · ${fmtDur(p.sec)}</div>${extra ? `<div class="n" style="color:var(--gold)">${extra}</div>` : ''}</div>`;
 }
+
+// ---------- lista de manobras (tocar no banner verde) ----------
+let stepsDrawnAt = -1e9;
+function renderSteps(st) {
+  const nav = S.nav;
+  if (!nav?.line) return;
+  const p = st?.progress ?? nav.progress;
+  if (st && Math.abs(p - stepsDrawnAt) < 30) return; // não redesenha a cada metro
+  stepsDrawnAt = p;
+  const avg = nav.trip.distance / nav.trip.duration;
+  const items = [
+    ...nav.steps.filter((s) => s.along > p - 10).map((s) => ({ along: s.along, arrow: s.arrow, text: s.type === 'arrive' ? 'Chegada ao destino' : s.text })),
+    ...nav.routeRadars.filter((x) => x.along > p - 10).map((x) => ({ along: x.along, arrow: '📷', radar: true, text: `Radar${(x.r.limit || '') && ` · ${x.r.limit} km/h`}` })),
+  ].sort((a, b) => a.along - b.along);
+  $('#stepsList').innerHTML = items.length ? items.map((it, i) => `
+    <li class="${it.radar ? 'radar' : ''} ${i === 0 ? 'next' : ''}">
+      <span class="st-arrow">${it.arrow}</span>
+      <div class="grow"><div class="title">${esc(it.text)}</div><div class="sub">~${fmtDur((it.along - p) / avg)}</div></div>
+      <span class="st-d">${fmtDist(Math.max(0, it.along - p))}</span>
+    </li>`).join('') : '<p class="hint">Nenhuma manobra pela frente — siga em frente até o destino.</p>';
+}
+$('#turn').onclick = () => {
+  const panel = $('#stepsPanel');
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) { stepsDrawnAt = -1e9; renderSteps(); }
+};
+$('#stepsClose').onclick = () => { $('#stepsPanel').hidden = true; };
 
 // ---------- confirmar radar após passar ----------
 function askConfirm(r) {
