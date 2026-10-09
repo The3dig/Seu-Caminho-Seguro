@@ -45,6 +45,7 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | 📷 **Modo só radar** | Para o dia a dia: sem rota, só alerta os radares da sua base à frente. |
 | 🟢 **Spotify** | Você escolhe a sua trilha preferida (artista ou playlist); com a sua autorização, o app toca ela no Spotify do celular — na abertura e pelo botão 🎵 durante a viagem. |
 | 🎵 **Trilha offline** | Alternativa: seus arquivos de música ficam guardados no celular; a música abaixa sozinha durante os avisos. |
+| 📥 **Importar base de radares** | Aba Radares › “📥 Importar arquivo de radares”: aceita o zip do Maparadar e os formatos de GPS (CSV/TXT Garmin e iGO, GPX, KML, OV2 TomTom), além do backup do app. Aguenta a base do Brasil inteiro (dezenas de milhares): o mapa desenha só os da área visível. |
 | 💾 **Backup** | Exporta/importa radares (JSON, CSV, GPX, KML — dá pra importar listas feitas no Google My Maps). |
 
 ## Como colocar no celular

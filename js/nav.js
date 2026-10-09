@@ -64,7 +64,20 @@ export class Nav {
 
   projectRadars(radars) {
     const out = [];
+    // Caixa em volta da rota: com bases grandes (dezenas de milhares de radares
+    // importados) só testa os que estão perto do caminho.
+    if (!this.box) {
+      const m = 0.01;
+      const b = { s: Infinity, n: -Infinity, w: Infinity, e: -Infinity };
+      for (const p of this.line.pts) {
+        if (p.lat < b.s) b.s = p.lat; if (p.lat > b.n) b.n = p.lat;
+        if (p.lon < b.w) b.w = p.lon; if (p.lon > b.e) b.e = p.lon;
+      }
+      this.box = { s: b.s - m, n: b.n + m, w: b.w - m, e: b.e + m };
+    }
+    const bx = this.box;
     for (const r of radars) {
+      if (r.lat < bx.s || r.lat > bx.n || r.lon < bx.w || r.lon > bx.e) continue;
       if (!isActive(r) && (!this.insist || isHazard(r))) continue; // buraco consertado: some
       const loc = locate(this.line, r, 0, this.line.pts.length - 1, this.radarRadius);
       if (!loc) continue;

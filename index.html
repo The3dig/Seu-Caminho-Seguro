@@ -280,17 +280,19 @@
     <details class="more" open id="radarHelp">
       <summary>De onde vêm os radares?</summary>
       <p class="hint">1️⃣ <b>Do mapa colaborativo (OpenStreetMap)</b>: baixados sozinhos quando você prepara uma viagem, ou no botão abaixo para a sua região.<br>
-      2️⃣ <b>Os que você marca</b>: no carro, 1 toque no botão vermelho <b>📷 + RADAR</b> e pronto (o limite é opcional).<br>
+      2️⃣ <b>Os que você marca</b>: no carro, 1 toque no botão vermelho <b>📷 + RADAR</b> e pronto (o limite é opcional).<br>      3️⃣ <b>De um arquivo</b> (ex.: base do Maparadar, com o Brasil inteiro): baixe o arquivo e toque em <b>📥 Importar arquivo de radares</b> abaixo. Aceita zip, CSV/TXT (Garmin, iGO), GPX, KML e OV2 (TomTom).<br>
       Toda vez que você passa num radar o app pergunta “Tinha?”, e assim sua base fica cada vez mais confiável.<br>
       O Waze e o Google não liberam os radares deles para outros apps.</p>
     </details>
     <button class="btn primary wide" id="btnRadarRegion">⬇ Baixar radares da minha região (40 km)</button>
+    <label class="btn wide file">📥 Importar arquivo de radares (Maparadar…)<input type="file" id="radarImport" accept=".zip,.json,.csv,.txt,.gpx,.kml,.ov2" hidden></label>
     <div class="row">
       <select id="radarFilter">
         <option value="all">Todos</option>
         <option value="confirmado">Confirmados</option>
         <option value="meu">Marcados por mim</option>
         <option value="osm">Do mapa (OSM)</option>
+        <option value="importado">Importados</option>
         <option value="inativo">Inativos</option>
       </select>
       <button class="btn" id="btnRadarMap">🗺 Ver no mapa</button>
@@ -300,7 +302,6 @@
     <summary>Avançado: backup e importar arquivo</summary>
     <p class="hint">Faça backup antes de trocar de celular. Se alguém te passar uma lista de radares (CSV com lat,lon,limite, GPX ou KML do Google My Maps), dá pra importar aqui.</p>
     <div class="row wrap">
-      <label class="btn file">📥 Importar<input type="file" id="radarImport" accept=".json,.csv,.txt,.gpx,.kml" hidden></label>
       <button class="btn" id="btnExportJson">💾 Backup (JSON)</button>
       <button class="btn" id="btnExportCsv">📄 Exportar CSV</button>
     </div>

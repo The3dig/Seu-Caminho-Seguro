@@ -159,9 +159,18 @@ function icon(html, cls = 'mk', size = 24) {
   return L.divIcon({ html: `<div class="${cls}">${html}</div>`, className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
 
+// Com muitos radares (base importada), desenha só os da área visível.
+const RADAR_DRAW_ALL = 400;
+let radarDrawnBox = null;
 async function drawRadars() {
   layers.radars.clearLayers();
-  const list = await Radars.all();
+  let list = await Radars.all();
+  radarDrawnBox = null;
+  if (list.length > RADAR_DRAW_ALL) {
+    if (map.getZoom() < 11) return; // de longe não dá pra ver mesmo
+    radarDrawnBox = map.getBounds().pad(0.6);
+    list = list.filter((r) => radarDrawnBox.contains([r.lat, r.lon])).slice(0, 700);
+  }
   for (const r of list) {
     const active = Radars.isActive(r);
     const h = Radars.HAZARDS[r.kind];
@@ -178,6 +187,13 @@ async function drawRadars() {
       .addTo(layers.radars);
   }
 }
+
+map.on('moveend zoomend', () => {
+  // Só redesenha quando saiu da área já desenhada (não a cada passo do GPS).
+  if (Radars.count() <= RADAR_DRAW_ALL) return;
+  const v = map.getBounds();
+  if (!radarDrawnBox ? map.getZoom() >= 11 : !radarDrawnBox.contains(v) || map.getZoom() < 11) drawRadars();
+});
 
 function drawTrip(trip, fit = true) {
   layers.route.clearLayers();
@@ -522,7 +538,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v35';
+const APP_VERSION = 'v36';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1592,7 +1608,7 @@ async function renderRadarList() {
   $('#radarStats').innerHTML = `<div><b>${list.length}</b><small>total</small></div><div><b>${conf}</b><small>confirmados</small></div><div><b>${mine}</b><small>marcados por você</small></div>`;
   let items = list;
   if (filter === 'confirmado' || filter === 'inativo') items = list.filter((r) => Radars.status(r) === filter);
-  else if (filter === 'meu' || filter === 'osm') items = list.filter((r) => r.source === filter);
+  else if (filter === 'meu' || filter === 'osm' || filter === 'importado') items = list.filter((r) => r.source === filter);
   items = [...items].sort((a, b) => (b.lastSeen || b.created) - (a.lastSeen || a.created)).slice(0, 300);
   const ul = $('#radarList');
   ul.innerHTML = items.map((r) => `
@@ -1663,17 +1679,19 @@ $('#btnExportJson').onclick = async () => download(`radares-${stamp()}.json`, Ra
 $('#btnExportCsv').onclick = async () => download(`radares-${stamp()}.csv`, Radars.exportCSV(await Radars.all()), 'text/csv');
 $('#radarImport').onchange = async (e) => {
   const file = e.target.files[0];
+  e.target.value = '';
   if (!file) return;
+  toast('📥 Lendo o arquivo…', 30000);
   try {
-    const items = Radars.parseImport(await file.text(), file.name);
+    const items = await Radars.parseFile(file);
+    if (!items.length) throw new Error('nenhum radar encontrado nele');
     const n = await Radars.importList(items);
-    toast(`📥 ${n} radares importados (${items.length - n} já existiam).`);
+    toast(`📥 ${n.toLocaleString('pt-BR')} radares importados${items.length - n ? ` (${(items.length - n).toLocaleString('pt-BR')} já existiam)` : ''}. Eles avisam mesmo sem internet.`, 8000);
     renderRadarList();
     drawRadars();
   } catch (err) {
-    toast('⚠ Arquivo não reconhecido: ' + err.message);
+    toast('⚠ Arquivo não reconhecido: ' + err.message + '. Me mande o arquivo para eu ajustar.', 9000);
   }
-  e.target.value = '';
 };
 
 // ================= Músicas =================
