@@ -133,6 +133,11 @@ export class Nav {
       }
     }
     const wasOff = this.offRoute;
+    // Chegou perto do destino (mesmo fora da linha, ex.: procurando vaga)?
+    const destPt = this.line.pts[this.line.pts.length - 1];
+    if (!this.arrived && dist(f, destPt) < 70) this.arrivedNow = true;
+    // Depois de chegar, não reclama de "fora da rota".
+    if (this.arrived || this.arrivedNow) this.offCount = 0;
     this.offRoute = this.offCount >= 3;
     if (this.offRoute && !wasOff) {
       speak('Atenção: você saiu da rota planejada. A rota não será alterada. Volte para o trajeto.', { urgent: true });
@@ -182,11 +187,12 @@ export class Nav {
       state.stepDist = d;
       this.announceStep(step, d, kmh);
     }
-    if (!this.arrived && state.remaining < 40) {
+    if (!this.arrived && (state.remaining < 40 || this.arrivedNow)) {
       this.arrived = true;
-      speak('Você chegou ao destino. Boa viagem e bom descanso!');
-      state.arrived = true;
+      this.arrivedAt = Date.now();
+      speak('Você chegou ao destino!', { force: true });
     }
+    state.arrived = this.arrived;
 
     // Postos e paradas à frente
     const avg = total / this.trip.duration; // m/s médio previsto

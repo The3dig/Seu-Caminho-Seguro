@@ -49,6 +49,7 @@ const layers = {
   radars: L.layerGroup().addTo(map),
   places: L.layerGroup().addTo(map),
   track: L.layerGroup().addTo(map),
+  rejoin: L.layerGroup().addTo(map),
   me: L.layerGroup().addTo(map),
 };
 map.on('dragstart', () => { if (S.nav) S.follow = false; });
@@ -753,6 +754,17 @@ function showRouteBar(info) {
 }
 
 // ▶ Iniciar: começa na hora; radares/postos/limites chegam em segundo plano.
+$('#btnRouteCancel').onclick = () => {
+  clearAlts();
+  showRouteBar(null);
+  S.trip = null;
+  drawTrip(null);
+  $('#tripSummary').innerHTML = '';
+  $('#to').value = '';
+  setPlanCollapsed(false);
+  if (S.here) map.setView([S.here.lat, S.here.lon], 15);
+};
+
 $('#btnGo').onclick = async () => {
   let trip;
   if (S.alts.length) {
@@ -1077,6 +1089,11 @@ function stopDrive() {
   layers.me.clearLayers();
   $('#confirmBox').hidden = $('#markBox').hidden = $('#stopBox').hidden = true;
   $('#stepsPanel').hidden = true;
+  $('#arriveCard').hidden = true;
+  arriveKeep = false;
+  arriveStopSince = 0;
+  S.rejoin = null;
+  layers.rejoin.clearLayers();
   curStop = null;
   S.confirmQueue = [];
   show('v-plan');
@@ -1084,11 +1101,58 @@ function stopDrive() {
   if (S.trip) { drawTrip(S.trip); renderSummary(S.trip); }
 }
 
-$('#btnStop').onclick = () => { if (confirm('Encerrar a navegação?')) stopDrive(); };
+$('#btnStop').onclick = () => { if (confirm('Encerrar a navegação e salvar no histórico?')) stopDrive(); };
 $('#btnRecenter').onclick = () => { S.follow = true; if (S.lastFix) map.setView([S.lastFix.lat, S.lastFix.lon], 16); };
 $('#btnDriveMusic').onclick = () => trilhaToggle();
 
 let meMarker = null;
+// Ícone do carro: seta grande (padrão), emoji ou uma imagem sua.
+const CAR_ICONS = ['arrow', '🚗', '🚙', '🛻', '🏍️', '🚚', '🦖', '🐉', '🦍'];
+let carImage = null;
+kv.get('carImage').then((v) => { carImage = v || null; });
+function carIcon(heading) {
+  const choice = S.settings.carIcon || 'arrow';
+  if (choice === 'custom' && carImage) {
+    return L.divIcon({ html: `<div class="car-ico"><img src="${carImage}" alt=""></div>`, className: '', iconSize: [62, 62], iconAnchor: [31, 31] });
+  }
+  if (choice !== 'arrow' && choice !== 'custom') {
+    return L.divIcon({ html: `<div class="car-ico emoji">${choice}</div>`, className: '', iconSize: [44, 44], iconAnchor: [22, 22] });
+  }
+  const html = heading != null ? `<div class="me-arrow big" style="transform:rotate(${heading}deg)"></div>` : '<div class="me" style="width:30px;height:30px"></div>';
+  return L.divIcon({ html, className: '', iconSize: [32, 40], iconAnchor: [16, 20] });
+}
+function renderCarIcons() {
+  const cur = S.settings.carIcon || 'arrow';
+  $('#carIcons').innerHTML = CAR_ICONS.map((c) => `<button data-c="${c}" class="${c === cur ? 'sel' : ''}">${c === 'arrow' ? '➤' : c}</button>`).join('') +
+    (carImage ? `<button data-c="custom" class="${cur === 'custom' ? 'sel' : ''}"><img src="${carImage}" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover"></button>` : '');
+  for (const b of $('#carIcons').querySelectorAll('button')) {
+    b.onclick = async () => {
+      S.settings.carIcon = b.dataset.c;
+      await saveSettings(S.settings);
+      renderCarIcons();
+      toast('Ícone do carro trocado.', 1500);
+    };
+  }
+}
+$('#carImage').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  // Reduz a imagem para 128 px (leve e nítida no mapa).
+  const img = new Image();
+  img.src = URL.createObjectURL(file);
+  await img.decode().catch(() => {});
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const side = Math.min(img.naturalWidth, img.naturalHeight) || 128;
+  c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 128, 128);
+  carImage = c.toDataURL('image/png');
+  await kv.set('carImage', carImage);
+  S.settings.carIcon = 'custom';
+  await saveSettings(S.settings);
+  renderCarIcons();
+  toast('🦖 Pronto! Seu ícone vai andar pelo mapa.', 3000);
+};
 let lastActiveSave = 0;
 function render(st) {
   const f = st.fix;
@@ -1110,9 +1174,9 @@ function render(st) {
   if (st.limitDrop) $('#limitNext').textContent = `↓${st.limitDrop.limit} · ${fmtDist(st.limitDrop.d)}`;
   // posição
   const rot = f.heading != null && st.kmh > 3;
-  const html = rot ? `<div class="me-arrow" style="transform:rotate(${f.heading}deg)"></div>` : '<div class="me"></div>';
-  if (!meMarker) meMarker = L.marker([f.lat, f.lon], { icon: L.divIcon({ html, className: '', iconSize: [22, 28], iconAnchor: [11, 14] }), zIndexOffset: 1000 });
-  else meMarker.setIcon(L.divIcon({ html, className: '', iconSize: [22, 28], iconAnchor: [11, 14] }));
+  const ico = carIcon(rot ? f.heading : null);
+  if (!meMarker) meMarker = L.marker([f.lat, f.lon], { icon: ico, zIndexOffset: 1000 });
+  else meMarker.setIcon(ico);
   meMarker.setLatLng([f.lat, f.lon]);
   if (!layers.me.hasLayer(meMarker)) layers.me.addLayer(meMarker);
   if (S.follow) map.setView([f.lat, f.lon], S.nav?.walk ? 17 : st.kmh > 80 ? 15 : 16, { animate: false });
@@ -1129,15 +1193,24 @@ function render(st) {
   if (!S.nav?.trip) return;
   // fora da rota
   $('#offRoute').hidden = !st.off;
-  if (st.off) $('#offDist').textContent = `(${fmtDist(st.offDist)})`;
+  if (st.off) {
+    $('#offDist').textContent = `(${fmtDist(st.offDist)})`;
+    // Seta apontando para o trajeto, relativa para onde o carro está indo.
+    const rel = st.backBearing != null ? st.backBearing - (f.heading ?? 0) : 0;
+    $('#backArrow').style.transform = `rotate(${rel}deg)`;
+  }
+  updateRejoin(st, f);
   // manobra
   if (!$('#stepsPanel').hidden) renderSteps(st);
-  if (st.step) {
+  if (S.rejoin && st.off) {
+    // banner mostra o caminho de volta (updateRejoin)
+  } else if (st.step) {
     $('#turnArrow').textContent = st.step.arrow;
     $('#turnDist').textContent = fmtDist(st.stepDist);
     $('#turnText').textContent = st.step.type === 'arrive' ? 'até o destino — siga a rota' : st.step.text;
-  } else if (st.arrived) {
-    if ($('#turnDist').textContent !== 'Chegou!') toast('🏁 Você chegou! Toque ⏹ para encerrar e salvar no histórico.', 10000);
+  }
+  if (st.arrived) onArrived(st);
+  if (st.arrived) {
     $('#turnArrow').textContent = '🏁';
     $('#turnDist').textContent = 'Chegou!';
     $('#turnText').textContent = 'Você chegou ao destino';
@@ -1170,6 +1243,78 @@ function card(k, p, extra = '', far = false) {
   S.cardPois.push(p);
   return `<div class="poi ${far ? 'far' : ''}" data-i="${S.cardPois.length - 1}"><div class="k">${k}</div><div class="v">${fmtDist(p.d)}</div>
     <div class="n">${esc(p.name)}${p.h24 ? ' · 24h' : ''} · ${fmtDur(p.sec)}</div>${extra ? `<div class="n" style="color:var(--gold)">${extra}</div>` : ''}</div>`;
+}
+
+// ---------- chegada: cartão "Encerrar" e fim automático ----------
+let arriveKeep = false;
+let arriveStopSince = 0;
+function onArrived(st) {
+  if (arriveKeep) return;
+  if ($('#arriveCard').hidden) $('#toast').hidden = true; // nada por cima do cartão
+  $('#arriveCard').hidden = false;
+  if (st.kmh < 5) {
+    if (!arriveStopSince) arriveStopSince = Date.now();
+    const left = 120 - Math.round((Date.now() - arriveStopSince) / 1000);
+    $('#arriveAuto').textContent = left > 0 ? `Encerra sozinho em ${left} s parado.` : 'Encerrando…';
+    if (left <= 0) { toast('🏁 Viagem encerrada e salva no histórico.', 4000); stopDrive(); }
+  } else {
+    arriveStopSince = 0;
+    $('#arriveAuto').textContent = 'Encerra sozinho depois de 2 min parado.';
+  }
+}
+$('#btnArriveEnd').onclick = () => stopDrive();
+$('#btnArriveKeep').onclick = () => { arriveKeep = true; $('#arriveCard').hidden = true; };
+
+// ---------- caminho de volta para a rota (a rota principal não muda) ----------
+async function rejoinRoute() {
+  const nav = S.nav, f = S.lastFix;
+  if (!nav?.line || !f) return;
+  const btn = $('#btnRejoin');
+  btn.disabled = true;
+  btn.textContent = '🧭 Calculando o caminho de volta…';
+  try {
+    // Volta num ponto um pouco à frente, para não mandar fazer retorno.
+    const loc = locate(nav.line, f);
+    const target = pointAt(nav.line, Math.min(nav.line.length, Math.max(loc?.along ?? 0, nav.progress) + 250));
+    const [r] = await route([{ lat: f.lat, lon: f.lon }, { lat: target.lat, lon: target.lon }]);
+    const line = makeLine(r.pts.map(([lat, lon]) => ({ lat, lon })));
+    S.rejoin = { line, steps: r.steps.filter((x) => x.type !== 'depart' && x.type !== 'arrive'), spoken: new Map() };
+    layers.rejoin.clearLayers();
+    L.polyline(r.pts, { color: '#ff9f1c', weight: 7, dashArray: '10 8' }).addTo(layers.rejoin);
+    const first = S.rejoin.steps[0];
+    Voice.speak(first ? `Para voltar à rota: ${first.text}.` : 'Siga em frente para voltar à rota.', { force: true });
+    toast(`🧭 Caminho de volta: ${fmtDist(r.distance)} (linha laranja).`, 5000);
+  } catch (e) {
+    toast('⚠ Não consegui calcular o caminho de volta (' + e.message + '). Siga a seta.', 6000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🧭 Me leve de volta à rota';
+  }
+}
+$('#btnRejoin').onclick = rejoinRoute;
+
+function updateRejoin(st, f) {
+  const rj = S.rejoin;
+  if (!rj) return;
+  if (!st.off) {
+    // Voltou para a rota: some a linha laranja.
+    S.rejoin = null;
+    layers.rejoin.clearLayers();
+    return;
+  }
+  const loc = locate(rj.line, f);
+  if (!loc) return;
+  const next = rj.steps.find((x) => x.along > loc.along + 10);
+  if (!next) return;
+  const d = next.along - loc.along;
+  $('#turnArrow').textContent = next.arrow;
+  $('#turnDist').textContent = fmtDist(d);
+  $('#turnText').textContent = `Volta à rota: ${next.text}`;
+  const lvl = d < 40 ? 2 : d < 200 ? 1 : 0;
+  if (lvl > (rj.spoken.get(next.along) || 0)) {
+    rj.spoken.set(next.along, lvl);
+    Voice.speak(lvl === 2 ? next.text : `Em ${Math.round(d / 10) * 10} metros, ${next.text.charAt(0).toLowerCase()}${next.text.slice(1)}`, { force: true });
+  }
 }
 
 // ---------- valores de pedágio que você informou (ficam para as próximas viagens) ----------
@@ -1280,6 +1425,7 @@ $('#btnMark').onclick = async () => {
   const r = await Radars.add({ lat: f.lat, lon: f.lon, heading: f.speed > 2 ? f.heading : null, source: 'meu' });
   S.lastMarked = r;
   S.nav?.addRadar(r);
+  drawRadars();
   Voice.beep({ times: 1, freq: 660 });
   Voice.speak('Radar marcado.');
   const chips = $('#limitChips');
@@ -1438,6 +1584,7 @@ function renderSettings() {
   $('#sSpeedWarn').checked = s.speedWarn !== false;
   $('#sInsist').checked = s.insistent !== false;
   renderVoices();
+  renderCarIcons();
   $('#sVoiceRate').value = s.voiceRate || 1.05;
   $('#sRateVal').textContent = `${Number($('#sVoiceRate').value).toFixed(2).replace('.', ',')}×`;
   $('#sAskStop').checked = s.askStopReason;

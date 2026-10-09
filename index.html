@@ -45,6 +45,7 @@
     <div class="route-bar" id="routeBar" hidden>
       <div class="grow"><b id="rbMain"></b><div class="sub" id="rbSub"></div></div>
       <button class="btn primary big" id="btnGo">▶ Iniciar</button>
+      <button class="btn icon rb-x" id="btnRouteCancel" title="Cancelar rota">✕</button>
     </div>
     <div class="warn resume" id="resumeBox" hidden>
       <div id="resumeText">Você tem uma viagem em andamento.</div>
@@ -109,7 +110,20 @@
       <ul class="list" id="stepsList"></ul>
     </div>
     <div class="offroute" id="offRoute" hidden>
-      ⚠ Fora da rota planejada <span id="offDist"></span><br><small>A rota não será recalculada — volte para o trajeto</small>
+      <div class="row" style="justify-content:center;gap:10px">
+        <span class="back-arrow" id="backArrow">⬆</span>
+        <div>⚠ Fora da rota planejada <span id="offDist"></span><br><small>A rota principal não muda</small></div>
+      </div>
+      <button class="btn wide" id="btnRejoin">🧭 Me leve de volta à rota</button>
+    </div>
+
+    <div class="arrive-card" id="arriveCard" hidden>
+      <p>🏁 Você chegou!</p>
+      <div class="row">
+        <button class="btn big ok" id="btnArriveEnd">✅ Encerrar viagem</button>
+        <button class="btn" id="btnArriveKeep">Continuar</button>
+      </div>
+      <small id="arriveAuto">Encerra sozinho em 2 min parado.</small>
     </div>
 
     <div class="radar-alert" id="radarAlert" hidden>
@@ -125,7 +139,7 @@
       <button class="btn round" id="btnRecenter" title="Centralizar">🎯</button>
       <button class="btn round" id="btnDriveMusic" title="Música">🎵</button>
       <button class="btn round" id="btnPause" title="Registrar parada">☕</button>
-      <button class="btn round" id="btnStop" title="Encerrar">⏹</button>
+      <button class="btn stop-pill" id="btnStop" title="Encerrar">⏹ Encerrar</button>
     </div>
 
     <div class="drive-bottom">
@@ -369,6 +383,9 @@
     <label class="check"><input type="checkbox" id="sVoice"> Voz para manobras e paradas</label>
     <label class="check"><input type="checkbox" id="sBeep"> Bipes e vibração</label>
     <label class="check"><input type="checkbox" id="sIntroMusic"> Tocar música na abertura</label>
+    <label>Ícone do seu carro no mapa</label>
+    <div class="icons" id="carIcons"></div>
+    <label class="btn file wide" style="margin-top:8px">🖼️ Usar uma imagem minha (ex.: personagem do jogo)<input type="file" id="carImage" accept="image/*" hidden></label>
     <label>Mapa escuro (noite)</label>
     <select id="sNight">
       <option value="auto">Automático (18h às 6h)</option>

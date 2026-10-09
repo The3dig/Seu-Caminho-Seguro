@@ -331,3 +331,18 @@ body.picking #map { bottom: 0; }
 .steps-panel .list li .title { white-space: normal; }
 .steps-panel li.toll { background: #2a2410; border: 1px solid #5a4a1f; cursor: pointer; }
 #stepsTolls { color: var(--gold); font-size: 13px; }
+
+/* Fora da rota, chegada, encerrar, ícone do carro */
+.offroute .back-arrow { font-size: 34px; display: inline-block; transition: transform .3s; }
+.offroute .btn.wide { margin-top: 8px; background: #fff; color: #8a1c14; font-weight: 800; }
+.arrive-card { position: absolute; left: 10px; right: 10px; top: calc(118px + var(--safe-t)); z-index: 7; background: #0d3a24; border: 2px solid var(--green);
+  border-radius: 16px; padding: 14px; text-align: center; box-shadow: 0 6px 24px #000c; }
+.arrive-card p { margin: 0 0 10px; font-size: 22px; font-weight: 800; }
+.arrive-card .row .btn.big { flex: 1; }
+.arrive-card small { display: block; margin-top: 8px; color: #a7d8bb; }
+.btn.stop-pill { border-radius: 999px; padding: 12px 14px; background: #3a1414; color: #ffb3ae; font-weight: 800; font-size: 14px; box-shadow: 0 2px 8px #0008; }
+.route-bar .rb-x { padding: 8px 10px; background: none; color: #b8d8ea; }
+.car-ico { display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 3px #000) drop-shadow(0 0 6px #33c3ffaa); }
+.car-ico.emoji { font-size: 38px; line-height: 1; }
+.car-ico img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 3px solid #fff; box-shadow: 0 0 0 4px #33c3ff; }
+.me-arrow.big { border-left-width: 16px; border-right-width: 16px; border-bottom-width: 40px; filter: drop-shadow(0 0 2px #000) drop-shadow(0 0 8px #33c3ff); }
