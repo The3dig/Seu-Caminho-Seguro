@@ -484,7 +484,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v32';
+const APP_VERSION = 'v33';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1021,7 +1021,10 @@ function departureSpeech(trip, nR) {
   const eta = new Date(Date.now() + trip.duration * 1000);
   const h = eta.getHours(), m = eta.getMinutes();
   const when = m === 0 ? `às ${h} horas` : `às ${h} e ${m}`;
-  const radars = nR ? ` ${nR === 1 ? 'Um radar' : `${nR} radares`} no caminho.` : trip.poisOk ? ' Nenhum radar conhecido no caminho.' : ' Buscando os radares do caminho.';
+  // Radares salvos no celular avisam sempre, com ou sem internet.
+  const radars = nR ? ` ${nR === 1 ? 'Um radar salvo' : `${nR} radares salvos`} no caminho, avisando mesmo sem internet.`
+    : trip.poisOk ? ' Nenhum radar conhecido no caminho.'
+      : navigator.onLine ? ' Buscando os radares do caminho.' : ' Nenhum radar salvo neste caminho ainda.';
   const stops = trip.plan?.days?.length > 1 ? ` A viagem tem ${trip.plan.days.length} dias.` : '';
   return `Saindo agora para ${name}. São ${dist}, chegada prevista ${when}.${radars}${stops} Rota fixa, sem desvios. ${safetyReminder()} Boa viagem!`;
 }
