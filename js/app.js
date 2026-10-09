@@ -134,8 +134,16 @@ function fitVisible(bounds) {
 
 function setPlanCollapsed(on) {
   const plan = $('#v-plan');
+  if (on) {
+    plan.scrollTop = 0;
+    // Altura do painel abaixado = até os atalhos (Casa, Trabalho, 🔍), que continuam visíveis.
+    const q = $('#quickPlaces');
+    const h = Math.min(q.offsetTop + q.offsetHeight + 14, window.innerHeight * 0.45);
+    plan.style.top = `calc(100% - var(--tabs-h) - var(--safe-b) - ${Math.round(h)}px)`;
+  } else {
+    plan.style.top = '';
+  }
   plan.classList.toggle('collapsed', on);
-  if (on) plan.scrollTop = 0;
   $('#planHandleText').textContent = on ? 'toque para voltar às opções' : 'toque para ver o mapa';
   setTimeout(() => {
     map.invalidateSize();
@@ -738,6 +746,7 @@ function clearAlts() {
 function showRouteBar(info) {
   const bar = $('#routeBar');
   bar.hidden = !info;
+  if ($('#v-plan').classList.contains('collapsed')) setTimeout(() => setPlanCollapsed(true), 0);
   if (!info) return;
   $('#rbMain').textContent = `${info.distance < 1000 ? `${Math.round(info.distance)} metros` : fmtDist(info.distance)} · ${fmtDur(info.duration)}`;
   $('#rbSub').textContent = `até ${info.dest} · chegada ${fmtClock(new Date(Date.now() + info.duration * 1000))}`;
@@ -1648,7 +1657,8 @@ async function renderQuick() {
     ...favs.filter((p) => p.kind === 'fav'),
   ];
   const box = $('#quickPlaces');
-  box.innerHTML = items.map((p, i) => `<button class="btn ${p.unset ? 'unset' : ''}" data-i="${i}">${p.icon} ${esc(p.name)}${p.unset ? ' +' : ''}</button>`).join('') +
+  box.innerHTML = '<button class="btn search" data-i="search">🔍 Para onde?</button>' +
+    items.map((p, i) => `<button class="btn ${p.unset ? 'unset' : ''}" data-i="${i}">${p.icon} ${esc(p.name)}${p.unset ? ' +' : ''}</button>`).join('') +
     '<button class="btn unset" data-i="new">＋ Novo</button><button class="btn unset" data-i="edit">✏️ Editar</button>';
   for (const b of box.querySelectorAll('button')) {
     // Tocar e segurar num atalho abre a edição (trocar endereço, apagar).
@@ -1660,6 +1670,7 @@ async function renderQuick() {
       if (long) return;
       if (b.dataset.i === 'new') return openPlaceEditor({ kind: 'fav' });
       if (b.dataset.i === 'edit') return show('v-places');
+      if (b.dataset.i === 'search') { setPlanCollapsed(false); setTimeout(() => $('#to').focus(), 300); return; }
       const p = items[+b.dataset.i];
       if (p.unset) openPlaceEditor({ kind: p.kind });
       else goTo(p);

@@ -311,3 +311,5 @@ body.picking #map { bottom: 0; }
 .route-bar .sub { color: #b8d8ea; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 52vw; }
 .route-bar .btn.big { padding: 14px 18px; font-size: 18px; }
 #v-plan.sheet.collapsed { top: calc(100% - var(--tabs-h) - var(--safe-b) - 150px); }
+.quick .btn.search { background: var(--accent); color: #002233; }
+#v-plan.sheet.collapsed .quick { margin-bottom: 0; }
