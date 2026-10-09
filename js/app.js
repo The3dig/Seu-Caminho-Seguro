@@ -484,7 +484,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v31';
+const APP_VERSION = 'v32';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -788,24 +788,40 @@ $('#btnGo').onclick = async () => {
   showRouteBar(null);
   await startDrive(trip, false);
   if (trip.poisOk) return;
+  fetchRouteDataLive(trip);
+};
+
+// Baixa radares/postos/limites da rota com a viagem já andando. Se o servidor
+// do mapa demorar ou falhar, tenta de novo sozinho (1, 2 e 4 min depois).
+async function fetchRouteDataLive(trip, attempt = 0) {
+  if (S.nav?.trip !== trip) return;
   try {
     const added = await downloadRouteData(trip);
-    if (S.nav?.trip === trip) {
-      // Atualiza a navegação em andamento com o que chegou.
-      S.nav.pois = trip.pois;
-      S.nav.limits = trip.speedLimits || [];
-      S.nav.allRadars = await Radars.all();
-      S.nav.routeRadars = S.nav.projectRadars(S.nav.allRadars);
-      drawTrip(trip, false);
-      const n = S.nav.routeRadars.length;
-      if (n) toast(`📷 ${n === 1 ? '1 radar' : n + ' radares'} no caminho${added ? ` (${added} novo${added > 1 ? 's' : ''} do mapa)` : ''}. Alertas ativos.`, 5000);
-      Voice.speak(n ? `${n === 1 ? 'Um radar' : `${n} radares`} no caminho. Alertas ativos.` : 'Nenhum radar conhecido no caminho.', { force: true });
-    }
+    if (S.nav?.trip !== trip) return;
+    // Atualiza a navegação em andamento com o que chegou.
+    S.nav.pois = trip.pois;
+    S.nav.limits = trip.speedLimits || [];
+    S.nav.allRadars = await Radars.all();
+    S.nav.routeRadars = S.nav.projectRadars(S.nav.allRadars);
+    drawTrip(trip, false);
+    const n = S.nav.routeRadars.length;
+    if (n) toast(`📷 ${n === 1 ? '1 radar' : n + ' radares'} no caminho${added ? ` (${added} novo${added > 1 ? 's' : ''} do mapa)` : ''}. Alertas ativos.`, 5000);
+    Voice.speak(n ? `${n === 1 ? 'Um radar' : `${n} radares`} no caminho. Alertas ativos.` : 'Nenhum radar conhecido no caminho.', { force: true });
   } catch {
     trip.poisOk = false;
-    toast('⚠ Sem internet para baixar radares do mapa agora — os alertas usam os radares que você já tem.', 7000);
+    if (S.nav?.trip !== trip) return;
+    const mine = S.nav.routeRadars?.length || 0;
+    const base = mine ? `Seus ${mine === 1 ? '1 radar salvo está ativo' : `${mine} radares salvos estão ativos`}.` : 'Os radares que você marcar já funcionam.';
+    if (attempt < 3) {
+      const min = 2 ** attempt;
+      // 1ª falha: tenta de novo em silêncio (não cobre o lembrete do cinto).
+      if (attempt > 0) toast(`⏳ ${navigator.onLine ? 'O servidor do mapa está demorando' : 'Sem internet agora'} para mandar os radares da rota — tento de novo em ${min} min. ${base}`, 7000);
+      setTimeout(() => fetchRouteDataLive(trip, attempt + 1), min * 60000);
+    } else {
+      toast(`⚠ Não consegui baixar os radares do mapa desta rota. ${base}`, 7000);
+    }
   }
-};
+}
 
 $('#btnPrepare').onclick = async () => {
   const sel = S.alts[S.altIdx];
@@ -991,7 +1007,9 @@ async function startDrive(trip, simulate, resume = null) {
   else startGps();
   const nR = S.nav.routeRadars.length;
   if (resume) return Voice.speak('Viagem retomada. A rota continua a mesma.');
-  Voice.speak(trip ? departureSpeech(trip, nR) : 'Modo alerta de radar ativado. Boa viagem!', { force: true });
+  Voice.speak(trip ? departureSpeech(trip, nR) : `Modo alerta de radar ativado. ${safetyReminder()} Boa viagem!`, { force: true });
+  const night = new Date().getHours() >= 18 || new Date().getHours() < 6;
+  toast(`🔒 Coloque o cinto  ·  💡 ${night ? 'Acenda os faróis' : 'Farol baixo na estrada'}`, 6000);
 }
 
 // "Saindo agora para Casa. São 6 quilômetros, chegada prevista às 18 e 45…"
@@ -1005,7 +1023,15 @@ function departureSpeech(trip, nR) {
   const when = m === 0 ? `às ${h} horas` : `às ${h} e ${m}`;
   const radars = nR ? ` ${nR === 1 ? 'Um radar' : `${nR} radares`} no caminho.` : trip.poisOk ? ' Nenhum radar conhecido no caminho.' : ' Buscando os radares do caminho.';
   const stops = trip.plan?.days?.length > 1 ? ` A viagem tem ${trip.plan.days.length} dias.` : '';
-  return `Saindo agora para ${name}. São ${dist}, chegada prevista ${when}.${radars}${stops} Rota fixa, sem desvios. Boa viagem!`;
+  return `Saindo agora para ${name}. São ${dist}, chegada prevista ${when}.${radars}${stops} Rota fixa, sem desvios. ${safetyReminder()} Boa viagem!`;
+}
+
+// Lembrete de segurança na saída: cinto sempre; faróis (lei do farol baixo em
+// rodovia) — à noite, "acenda os faróis"; de dia, "farol baixo na estrada".
+function safetyReminder(now = new Date()) {
+  const h = now.getHours();
+  const night = h >= 18 || h < 6;
+  return night ? 'Coloque o cinto e acenda os faróis.' : 'Coloque o cinto e, na estrada, farol baixo ligado.';
 }
 
 // Sem GPS = sem alerta. Nunca falhar em silêncio: avisa quando o sinal some.
@@ -1067,7 +1093,8 @@ async function requestWakeLock() {
     // Sem como travar a tela ligada: pede para o usuário ajustar o celular.
     if (!S.warnedScreen) {
       S.warnedScreen = true;
-      toast('⚠ Deixe a tela sempre ligada durante a viagem (iPhone: Ajustes › Tela e Brilho › Bloqueio Automático › Nunca). Com a tela apagada os alertas param.', 15000);
+      // Depois do lembrete do cinto/faróis (6 s), para um não cobrir o outro.
+      setTimeout(() => S.nav && toast('⚠ Deixe a tela sempre ligada durante a viagem (iPhone: Ajustes › Tela e Brilho › Bloqueio Automático › Nunca). Com a tela apagada os alertas param.', 15000), 6500);
     }
   }
 }
