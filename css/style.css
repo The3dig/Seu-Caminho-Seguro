@@ -409,3 +409,5 @@ body.picking #map { bottom: 0; }
 .radar-alert.hazard .radar-sign { border-color: #f2c94c; background: #ffe9a8; font-size: 34px; }
 .radar-alert.hazard .ra-title { color: #ffe08a; }
 .mk.hazard { font-size: 15px; background: #ffe9a8; border: 3px solid #f2c94c; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; text-shadow: none; }
+.suggest .km { text-align: right; white-space: nowrap; }
+.suggest .km small { display: block; opacity: .7; font-size: 11px; font-weight: 400; }

@@ -1,5 +1,5 @@
 import { getSettings, saveSettings, listTrips, saveTrip, loadTrip, deleteTrip, uid, kv } from './store.js';
-import { geocode, route, cityAt, addressAt } from './routing.js';
+import { geocode, route, cityAt, addressAt, roadDistances } from './routing.js';
 import { fetchAlongRoute, fuelGaps, CATEGORIES, lodgingNear, radarsNear, fetchSpeedLimits, tollPlazas } from './pois.js';
 import { buildPlan, DEFAULT_PREFS, money } from './planner.js';
 import { makeLine, locate, pointAt, fmtDist, fmtDur, fmtClock } from './geo.js';
@@ -538,7 +538,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v37';
+const APP_VERSION = 'v38';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -2639,7 +2639,9 @@ function attachSuggest(inputSel, onPick) {
         box.innerHTML = list.map((r, i) => {
           const [name, ...rest] = r.label.split(',');
           const pin = r.cls === 'city' ? '🏙️' : r.cls === 'landmark' ? '⭐' : r.cls === 'street' ? '🛣️' : '📍';
-          return `<li data-i="${i}"><span class="pin">${pin}</span><div class="grow"><div class="title">${esc(name)}</div><div class="sub">${esc(rest.join(',').trim())}</div></div><span class="km">${fmtKm(r.km)}</span></li>`;
+          // De carro (quando já calculou) ou "~" = em linha reta, enquanto calcula.
+          const km = r.road ? `${fmtKm(r.road.km)}<small>${fmtDur(r.road.sec)}</small>` : r.km != null ? `<span title="em linha reta">~${fmtKm(r.km)}</span>` : '';
+          return `<li data-i="${i}"><span class="pin">${pin}</span><div class="grow"><div class="title">${esc(name)}</div><div class="sub">${esc(rest.join(',').trim())}</div></div><span class="km">${km}</span></li>`;
         }).join('') + (done ? '' : '<li class="sub">🔎 procurando mais…</li>');
         for (const li of box.querySelectorAll('li[data-i]')) {
           li.onclick = () => {
@@ -2652,6 +2654,14 @@ function attachSuggest(inputSel, onPick) {
       let list = [];
       try { list = await suggestPlaces(t, S.here, (l) => render(l, false)); } catch { /* sem internet */ }
       render(list, true);
+      // Troca a distância em linha reta pela de carro (e o tempo).
+      if (S.here && list.length && !S.settings.walkTest) {
+        try {
+          const road = await roadDistances(S.here, list);
+          list.forEach((r, i) => { if (road[i]) r.road = road[i]; });
+          render(list, true);
+        } catch { /* sem internet: fica a linha reta (~) */ }
+      }
     }, 450);
   });
 }

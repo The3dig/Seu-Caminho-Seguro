@@ -193,6 +193,27 @@ function relevant(s) {
   return true;
 }
 
+// Distância e tempo DE CARRO de você até cada lugar (uma consulta só, para a
+// lista de sugestões). A distância da busca é em linha reta: Caraguá → Aparecida
+// dá ~89 km "voando", mas ~190 km pela serra e pela Dutra.
+const roadCache = new Map();
+export async function roadDistances(from, places, ms = 7000) {
+  const k = (p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
+  const need = places.filter((p) => !roadCache.has(k(from) + '>' + k(p)));
+  if (need.length) {
+    const coords = [from, ...need].map((p) => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
+    const res = await fetchT(`https://router.project-osrm.org/table/v1/driving/${coords}?sources=0&annotations=distance,duration`, {}, ms);
+    if (!res.ok) throw new Error('osrm ' + res.status);
+    const d = await res.json();
+    need.forEach((p, i) => {
+      const m = d.distances?.[0]?.[i + 1], s = d.durations?.[0]?.[i + 1];
+      roadCache.set(k(from) + '>' + k(p), m != null ? { km: m / 1000, sec: s } : null);
+    });
+    if (roadCache.size > 500) roadCache.clear();
+  }
+  return places.map((p) => roadCache.get(k(from) + '>' + k(p)) || null);
+}
+
 export async function route(points, { foot = false } = {}) {
   const coords = points.map((p) => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
   const alt = points.length === 2 ? 'true' : 'false';
