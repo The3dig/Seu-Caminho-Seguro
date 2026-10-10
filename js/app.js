@@ -620,7 +620,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v44';
+const APP_VERSION = 'v45';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -883,14 +883,29 @@ function tripFromAlt(sel) {
 }
 
 // Baixa postos, radares e limites do caminho. onProgress(0..1).
+// Radares e pedágios chegam primeiro e já entram na viagem em andamento.
 async function downloadRouteData(trip, onProgress = () => {}) {
   const line = makeLine(trip.pts.map(([lat, lon]) => ({ lat, lon })));
-  const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => onProgress(f * 0.7));
+  let partialAt = 0, added = 0;
+  const onPartial = async ({ radars, pois }) => {
+    added += await Radars.mergeOSM(radars);
+    trip.pois = [...(trip.pois || []).filter((p) => p.cat !== 'toll'), ...pois].sort((a, b) => a.along - b.along);
+    if (S.nav?.trip === trip && Date.now() - partialAt > 1500) {
+      partialAt = Date.now();
+      S.nav.pois = trip.pois;
+      S.nav.allRadars = await Radars.all();
+      S.nav.routeRadars = S.nav.projectRadars(S.nav.allRadars);
+      drawRadars();
+    }
+  };
+  const { pois, radars, complete } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => onProgress(f * 0.7), onPartial);
   trip.pois = pois;
   trip.poisOk = true;
+  trip.poisPartial = !complete;
   await loadLimits(trip, line, (f) => onProgress(0.7 + f * 0.3));
-  const added = await Radars.mergeOSM(radars);
+  added += await Radars.mergeOSM(radars);
   await saveTrip(trip);
+  if (!complete) toast('⚠ Parte dos postos do caminho não veio (servidor do mapa lento). Radares e pedágios que chegaram já estão ativos; dá para tocar em “Atualizar dados” depois.', 8000);
   return added;
 }
 
@@ -1075,16 +1090,11 @@ async function loadLimits(trip, line, onProgress) {
 }
 
 async function refreshTrip(trip) {
-  toast('Atualizando postos e radares…');
+  toast('Atualizando postos, pedágios e radares…', 60000);
   try {
-    const line = makeLine(trip.pts.map(([lat, lon]) => ({ lat, lon })));
-    const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius);
-    trip.pois = pois;
-    trip.poisOk = true;
-    await loadLimits(trip, line);
-    await saveTrip(trip);
-    const added = await Radars.mergeOSM(radars);
-    toast(`Atualizado: ${pois.length} pontos na rota, ${added} radares novos.`);
+    const added = await downloadRouteData(trip);
+    const plazas = tollPlazas(trip.pois).length;
+    toast(`Atualizado: ${trip.pois.length} pontos na rota, ${plazas} pedágio${plazas === 1 ? '' : 's'}, ${added} radares novos.`, 6000);
     drawTrip(trip, false);
     drawRadars();
     renderSummary(trip);
