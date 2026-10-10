@@ -164,6 +164,8 @@
         <button class="btn big ok" id="btnYes">✅ Tinha</button>
         <button class="btn big no" id="btnNo">❌ Não tinha</button>
       </div>
+      <button class="btn link" id="btnOtherLimit">✅ Tinha, mas o limite é outro</button>
+      <div class="chips" id="confirmLimits" hidden></div>
       <div class="confirm-timer"><div></div></div>
     </div>
 
@@ -411,6 +413,8 @@
       <option value="stopped">Só quando estiver parado</option>
       <option value="off">Desligadas (só anda)</option>
     </select>
+    <label class="check"><input type="checkbox" id="sCompanion"> 🗣️ Kravenox companheiro: fala de vez em quando na viagem (contra o tédio e o sono)</label>
+    <p class="hint">Dica: durante a viagem, toque no seu ícone no mapa para trocar sem sair da navegação.</p>
     <label>Mapa escuro (noite)</label>
     <select id="sNight">
       <option value="auto">Automático (18h às 6h)</option>
@@ -509,6 +513,22 @@
       <button class="btn wide" id="mmSave">⭐ Salvar como lugar</button>
       <button class="btn wide" id="mmRadar">📷 Adicionar radar aqui</button>
       <button class="btn link wide" id="mmCancel">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Tocar no seu ícone durante a viagem: trocar sem sair da navegação -->
+  <div class="modal" id="iconMenu" hidden>
+    <div class="modal-box">
+      <p style="margin-top:0"><b>Seu ícone no mapa</b></p>
+      <div class="icons" id="qmIcons"></div>
+      <label>Brincadeiras do Kravenox 🦖</label>
+      <select id="qmFun">
+        <option value="always">Parado à vontade + raras e pequenas andando</option>
+        <option value="stopped">Só quando estiver parado</option>
+        <option value="off">Desligadas (só anda)</option>
+      </select>
+      <label class="check"><input type="checkbox" id="qmComp"> 🗣️ Kravenox companheiro: fala de vez em quando na viagem (contra o tédio e o sono)</label>
+      <button class="btn primary wide" id="qmClose">Pronto</button>
     </div>
   </div>
 

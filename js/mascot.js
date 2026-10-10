@@ -78,7 +78,7 @@ export class Mascot {
     if (still > 180000) { if (!this.sleeping) this.sleep(); return; }
     if (still > 3000 && now > this.nextAntic) {
       this.nextAntic = now + rand(6, 13) * 1000;
-      this.play(pick(['boom', 'boom', 'jump', 'roar', 'stomp', 'look', 'spin', 'boom']));
+      this.play(pick(['boom', 'boom', 'jump', 'roar', 'stomp', 'look', 'spin', 'espinhos', 'furia', 'salto', 'raio']));
     }
   }
 
@@ -118,7 +118,7 @@ export class Mascot {
   }
 
   play(name) {
-    const dur = { jump: 1300, roar: 1600, stomp: 1300, look: 2200, spin: 1100, boom: 3200, whip: 1400, party: 4200 }[name] || 1500;
+    const dur = { jump: 1300, roar: 1600, stomp: 1300, look: 2200, spin: 1100, boom: 3200, whip: 1400, party: 4200, espinhos: 1800, furia: 2200, salto: 2000, raio: 3000 }[name] || 1500;
     this.current = name;
     this.busyUntil = Date.now() + dur;
     this.later(dur, () => { this.override = null; this.current = null; this.setFrame(); });
@@ -154,6 +154,37 @@ export class Mascot {
         this.bodyAnim('k-hop', 900);
         break;
       }
+      case 'espinhos': // Espinhos Vorazes: espinhos brotam do chão em volta
+        this.override = 'k_down_1';
+        this.bubble('Espinhos Vorazes!', 1600);
+        this.bodyAnim('k-hop', 500);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          this.later(250 + i * 60, () => {
+            const e = this.spawn('k-spike', Math.cos(a) * 34, Math.sin(a) * 12 - 2, '', 1300);
+            e.style.transform = `translateX(-50%) rotate(${Math.round(Math.cos(a) * 25)}deg)`;
+          });
+        }
+        break;
+      case 'furia': // Modo Fúria: aura vermelha pulsando e tremor
+        this.override = 'k_down_1';
+        this.body.classList.add('k-rage');
+        this.later(2000, () => this.body.classList.remove('k-rage'));
+        this.bodyAnim('k-shake', 1400);
+        this.bubble('MODO FÚRIA!', 1800);
+        break;
+      case 'salto': // Salto Predador + Esmagamento: pulo alto e onda de impacto
+        this.bodyAnim('k-leap', 1100);
+        this.later(1000, () => {
+          this.spawn('k-wave', 0, -2, '', 900);
+          this.spawn('k-dust', -26, -4, '', 800);
+          this.spawn('k-dust', 26, -4, '', 800);
+        });
+        this.later(1050, () => this.bubble('Esmagamento!', 900));
+        break;
+      case 'raio': // Raio da Essência: o mesmo prediozinho, mas com raio roxo
+        this.boom(side, 1, true);
+        break;
       case 'boom': this.boom(side, 1); break;
       case 'whip': this.boom(side, 0.6); break;
       case 'party':
@@ -169,7 +200,7 @@ export class Mascot {
   }
 
   // Prediozinho de mentira ao lado, bafo de fogo e cabum. size < 1 = versão discreta.
-  boom(side, size) {
+  boom(side, size, essence = false) {
     const far = 64 * size;
     this.override = `k_${side < 0 ? 'left' : 'right'}_0`;
     const b = this.spawn('k-bld', side * far, 0, '', 3000);
@@ -177,7 +208,7 @@ export class Mascot {
     this.later(size < 1 ? 250 : 700, () => {
       this.override = `k_${side < 0 ? 'left' : 'right'}_1`;
       this.setFrame();
-      const beam = this.spawn('k-beam', side * 12, -30 * size, '', 700);
+      const beam = this.spawn(essence ? 'k-beam essence' : 'k-beam', side * 12, -30 * size, '', 700);
       beam.style.width = `${far - 18}px`;
       if (side < 0) { beam.style.transformOrigin = 'right center'; beam.style.left = `${40 - 12 - (far - 18)}px`; }
     });

@@ -157,6 +157,8 @@ export class Nav {
     if (this.offRoute && !wasOff) {
       speak('Atenção: você saiu da rota planejada. A rota não será alterada. Volte para o trajeto.', { urgent: true });
       beep({ times: 1, freq: 500 });
+      this.offSpokenAt = Date.now();
+      this.offSpokenD = loc?.offset;
     }
     if (!this.offRoute && wasOff) speak('Você voltou para a rota planejada.');
     state.off = this.offRoute;
@@ -164,6 +166,7 @@ export class Nav {
     if (this.offRoute) {
       const near = pointAt(this.line, loc.along);
       state.backBearing = bearing(f, near);
+      this.guideBack(loc.offset, state.backBearing, f.heading, kmh);
     }
 
     const p = this.progress;
@@ -201,8 +204,8 @@ export class Nav {
       this.updateFree(f, kmh, state);
     }
 
-    // Manobras
-    const step = this.steps.find((s) => s.along > p + 15);
+    // Manobras (depois de chegar, silêncio: você pode estar dando a volta atrás de vaga)
+    const step = this.arrived ? null : this.steps.find((s) => s.along > p + 15);
     if (step) {
       const d = step.along - p;
       state.step = step;
@@ -336,6 +339,23 @@ export class Nav {
     const force = this.insist;
     beep({ times: 2, freq: 520, force });
     speak(t === this.hazThresholds[this.hazThresholds.length - 1] ? `${h.word}!` : `${h.word} em ${sayDist(d)}.`, { urgent: true, force });
+  }
+
+  // Fora da rota: mesmo sem internet (sem caminho de volta calculado), a voz
+  // diz para que lado e a que distância fica a rota, e vai atualizando.
+  guideBack(d, back, heading, kmh) {
+    if (this.rejoining || this.arrived || d == null || back == null) return;
+    const now = Date.now();
+    const moved = Math.abs((this.offSpokenD ?? d) - d);
+    if (now - (this.offSpokenAt || 0) < 25000 && moved < 150) return;
+    this.offSpokenAt = now;
+    this.offSpokenD = d;
+    let side = '';
+    if (heading != null && kmh > 3) {
+      const rel = ((back - heading) % 360 + 360) % 360;
+      side = rel < 35 || rel > 325 ? 'em frente' : rel < 145 ? 'à sua direita' : rel > 215 ? 'à sua esquerda' : 'para trás';
+    }
+    speak(`A rota fica a ${sayDist(d)}${side ? ', ' + side : ''}.`);
   }
 
   announceStep(step, d, kmh) {

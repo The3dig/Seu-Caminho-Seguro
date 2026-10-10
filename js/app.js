@@ -13,6 +13,7 @@ import { CONFIG } from './config.js';
 import { searchPlaces, suggestPlaces, setSearchKey } from './search.js';
 import * as Cities from './cities.js';
 import { Mascot, PORTRAIT } from './mascot.js';
+import { Companion } from './companion.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -538,7 +539,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v38';
+const APP_VERSION = 'v39';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -860,7 +861,9 @@ async function fetchRouteDataLive(trip, attempt = 0) {
     drawTrip(trip, false);
     const n = S.nav.routeRadars.length;
     if (n) toast(`📷 ${n === 1 ? '1 radar' : n + ' radares'} no caminho${added ? ` (${added} novo${added > 1 ? 's' : ''} do mapa)` : ''}. Alertas ativos.`, 5000);
-    Voice.speak(n ? `${n === 1 ? 'Um radar' : `${n} radares`} no caminho. Alertas ativos.` : 'Nenhum radar conhecido no caminho.', { force: true });
+    // Só fala se mudou o que já foi dito na saída (sem repetir).
+    const nR = S.nav.routeRadars.filter((x) => !Radars.isHazard(x.r)).length;
+    if (nR !== S.departRadars) Voice.speak(nR ? `Agora são ${nR === 1 ? 'um radar' : `${nR} radares`} no caminho.` : 'Nenhum radar conhecido no caminho.', { force: true });
   } catch {
     trip.poisOk = false;
     if (S.nav?.trip !== trip) return;
@@ -1060,6 +1063,7 @@ async function startDrive(trip, simulate, resume = null) {
   if (simulate && trip) startSim(trip);
   else startGps();
   const nR = S.nav.routeRadars.filter((x) => !Radars.isHazard(x.r)).length;
+  S.departRadars = nR;
   if (resume) return Voice.speak('Viagem retomada. A rota continua a mesma.');
   Voice.speak(trip ? departureSpeech(trip, nR) : `Modo alerta de radar ativado. ${safetyReminder()} Boa viagem!`, { force: true });
   const night = new Date().getHours() >= 18 || new Date().getHours() < 6;
@@ -1071,16 +1075,14 @@ function departureSpeech(trip, nR) {
   const dest = trip.places?.length ? trip.places[trip.places.length - 1].label : (trip.name.split('→')[1] || trip.name);
   const name = dest.replace(/^[^\p{L}\d]+/u, '').split(',')[0].trim(); // tira emoji (🏠) e o resto do endereço
   const km = trip.distance / 1000;
-  const dist = km < 1 ? `${Math.round(trip.distance / 50) * 50} metros` : `${km < 10 ? Math.round(km) || 1 : Math.round(km)} quilômetro${Math.round(km) === 1 ? '' : 's'}`;
+  const dist = km < 1 ? `${Math.round(trip.distance / 50) * 50} metros` : `${Math.round(km) || 1} quilômetro${Math.round(km) === 1 ? '' : 's'}`;
   const eta = new Date(Date.now() + trip.duration * 1000);
   const h = eta.getHours(), m = eta.getMinutes();
-  const when = m === 0 ? `às ${h} horas` : `às ${h} e ${m}`;
-  // Radares salvos no celular avisam sempre, com ou sem internet.
-  const radars = nR ? ` ${nR === 1 ? 'Um radar salvo' : `${nR} radares salvos`} no caminho, avisando mesmo sem internet.`
-    : trip.poisOk ? ' Nenhum radar conhecido no caminho.'
-      : navigator.onLine ? ' Buscando os radares do caminho.' : ' Nenhum radar salvo neste caminho ainda.';
-  const stops = trip.plan?.days?.length > 1 ? ` A viagem tem ${trip.plan.days.length} dias.` : '';
-  return `Saindo agora para ${name}. São ${dist}, chegada prevista ${when}.${radars}${stops} Rota fixa, sem desvios. ${safetyReminder()} Boa viagem!`;
+  const when = m === 0 ? `às ${h}` : `às ${h} e ${m}`;
+  // Curto: destino, distância, chegada, radares, cinto/faróis.
+  const radars = nR ? ` ${nR === 1 ? 'Um radar' : `${nR} radares`} no caminho.` : '';
+  const days = trip.plan?.days?.length > 1 ? ` ${trip.plan.days.length} dias de viagem.` : '';
+  return `Saindo para ${name}. ${dist}, chegada ${when}.${radars}${days} ${safetyReminder()} Boa viagem!`;
 }
 
 // Lembrete de segurança na saída: cinto sempre; faróis (lei do farol baixo em
@@ -1088,7 +1090,7 @@ function departureSpeech(trip, nR) {
 function safetyReminder(now = new Date()) {
   const h = now.getHours();
   const night = h >= 18 || h < 6;
-  return night ? 'Coloque o cinto e acenda os faróis.' : 'Coloque o cinto e, na estrada, farol baixo ligado.';
+  return night ? 'Cinto e faróis.' : 'Cinto, e farol baixo na estrada.';
 }
 
 // Sem GPS = sem alerta. Nunca falhar em silêncio: avisa quando o sinal some.
@@ -1166,6 +1168,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function stopDrive() {
+  S.companion = null;
   if (S.rec) {
     S.rec.finish().then((kept) => { if (kept) toast('📍 Viagem salva no histórico (aba Lugares).', 3500); });
     S.rec = null;
@@ -1237,20 +1240,41 @@ function carIcon(heading) {
   const html = heading != null ? `<div class="me-arrow big" style="transform:rotate(${heading}deg)"></div>` : '<div class="me" style="width:30px;height:30px"></div>';
   return L.divIcon({ html, className: '', iconSize: [32, 40], iconAnchor: [16, 20] });
 }
-function renderCarIcons() {
+// Companheiro: ligado por padrão para quem usa o Kravenox.
+const companionOn = () => S.settings.companion ?? ((S.settings.carIcon || 'arrow') === 'kravenox');
+
+function renderCarIcons(sel = '#carIcons') {
   const cur = S.settings.carIcon || 'arrow';
   const face = (c) => c === 'arrow' ? '➤' : c === 'kravenox' ? `<img src="${PORTRAIT}" alt="Kravenox" class="pix" style="width:34px;height:34px">` : c;
-  $('#carIcons').innerHTML = CAR_ICONS.map((c) => `<button data-c="${c}" class="${c === cur ? 'sel' : ''}">${face(c)}</button>`).join('') +
+  $(sel).innerHTML = CAR_ICONS.map((c) => `<button data-c="${c}" class="${c === cur ? 'sel' : ''}">${face(c)}</button>`).join('') +
     (carImage ? `<button data-c="custom" class="${cur === 'custom' ? 'sel' : ''}"><img src="${carImage}" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover"></button>` : '');
-  for (const b of $('#carIcons').querySelectorAll('button')) {
+  for (const b of $(sel).querySelectorAll('button')) {
     b.onclick = async () => {
       S.settings.carIcon = b.dataset.c;
       await saveSettings(S.settings);
-      renderCarIcons();
-      toast('Ícone do carro trocado.', 1500);
+      renderCarIcons(sel);
+      refreshMeIcon();
+      toast('Ícone trocado.', 1500);
     };
   }
 }
+// Troca o ícone na hora (sem esperar o próximo ponto do GPS).
+function refreshMeIcon() {
+  if (!meMarker) return;
+  const krav = (S.settings.carIcon || 'arrow') === 'kravenox';
+  if (krav && !mascot) mascot = new Mascot();
+  meMarker.setIcon(krav ? mascot.icon : carIcon(null));
+}
+function openIconMenu() {
+  renderCarIcons('#qmIcons');
+  $('#qmFun').value = S.settings.mascotFun || 'always';
+  $('#qmComp').checked = companionOn();
+  $('#iconMenu').hidden = false;
+}
+$('#qmFun').onchange = async () => { S.settings.mascotFun = $('#qmFun').value; await saveSettings(S.settings); };
+$('#qmComp').onchange = async () => { S.settings.companion = $('#qmComp').checked; await saveSettings(S.settings); };
+$('#qmClose').onclick = () => { $('#iconMenu').hidden = true; };
+$('#iconMenu').onclick = (e) => { if (e.target.id === 'iconMenu') $('#iconMenu').hidden = true; };
 $('#carImage').onchange = async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
@@ -1294,10 +1318,16 @@ function render(st) {
   const krav = (S.settings.carIcon || 'arrow') === 'kravenox';
   if (krav && !mascot) mascot = new Mascot();
   const ico = krav ? mascot.icon : carIcon(rot ? f.heading : null);
-  if (!meMarker) meMarker = L.marker([f.lat, f.lon], { icon: ico, zIndexOffset: 1000 });
+  if (!meMarker) meMarker = L.marker([f.lat, f.lon], { icon: ico, zIndexOffset: 1000 }).on('click', openIconMenu);
   else if (!krav || meMarker.options.icon !== ico) meMarker.setIcon(ico);
   meMarker.setLatLng([f.lat, f.lon]);
   if (!layers.me.hasLayer(meMarker)) layers.me.addLayer(meMarker);
+  // Kravenox companheiro: fala de vez em quando (só voz), nunca por cima de avisos.
+  if (companionOn() && !S.simulating) {
+    if (!S.companion) S.companion = new Companion();
+    const h = new Date().getHours();
+    S.companion.tick(st, { movingSec: S.nav?.movingSec || 0, night: h >= 22 || h < 5, fuelKm: st.next?.fuel?.[0] ? st.next.fuel[0].d / 1000 : null });
+  }
   if (krav) {
     // Brincadeiras nunca por cima de avisos: radar, limite, fora da rota ou manobra perto.
     const quiet = !!(st.radar || st.overRoad || st.limitDrop || st.off || (st.stepDist != null && st.stepDist < 400 && st.kmh > 3));
@@ -1405,13 +1435,14 @@ async function rejoinRoute() {
     const [r] = await route([{ lat: f.lat, lon: f.lon }, { lat: target.lat, lon: target.lon }]);
     const line = makeLine(r.pts.map(([lat, lon]) => ({ lat, lon })));
     S.rejoin = { line, steps: r.steps.filter((x) => x.type !== 'depart' && x.type !== 'arrive'), spoken: new Map() };
+    nav.rejoining = true; // a linha laranja guia; a voz de "a rota fica a X" se cala
     layers.rejoin.clearLayers();
     L.polyline(r.pts, { color: '#ff9f1c', weight: 7, dashArray: '10 8' }).addTo(layers.rejoin);
     const first = S.rejoin.steps[0];
     Voice.speak(first ? `Para voltar à rota: ${first.text}.` : 'Siga em frente para voltar à rota.', { force: true });
     toast(`🧭 Caminho de volta: ${fmtDist(r.distance)} (linha laranja).`, 5000);
   } catch (e) {
-    toast('⚠ Não consegui calcular o caminho de volta (' + e.message + '). Siga a seta.', 6000);
+    toast(navigator.onLine ? '⚠ Não consegui calcular o caminho de volta (' + e.message + '). Siga a seta.' : '📵 Sem internet para calcular o caminho de volta. Siga a seta: a voz vai dizendo para que lado e a que distância fica a rota.', 7000);
   } finally {
     btn.disabled = false;
     btn.textContent = '🧭 Me leve de volta à rota';
@@ -1425,6 +1456,7 @@ function updateRejoin(st, f) {
   if (!st.off) {
     // Voltou para a rota: some a linha laranja.
     S.rejoin = null;
+    if (S.nav) S.nav.rejoining = false;
     layers.rejoin.clearLayers();
     return;
   }
@@ -1516,6 +1548,8 @@ function nextConfirm() {
   const box = $('#confirmBox');
   if (!r) { box.hidden = true; return; }
   const h = Radars.HAZARDS[r.kind];
+  $('#btnOtherLimit').hidden = !!h;
+  $('#confirmLimits').hidden = true;
   $('#confirmText').textContent = h ? `Passou pelo ${h.name}. Ainda está lá?` : `Passou pelo radar${r.limit ? ' de ' + r.limit + ' km/h' : ''}. Ele estava lá?`;
   box.hidden = false;
   const bar = box.querySelector('.confirm-timer div');
@@ -1541,6 +1575,24 @@ async function answer(yes) {
   }
   nextConfirm();
 }
+// "Tinha, mas o limite é outro": confirma e corrige o limite com um toque.
+$('#btnOtherLimit').onclick = () => {
+  clearTimeout(S.confirmTimer);
+  S.confirmTimer = setTimeout(() => answer(null), 15000);
+  const box = $('#confirmLimits');
+  box.innerHTML = [30, 40, 50, 60, 70, 80, 90, 100, 110, 120].map((v) => `<button class="btn" data-v="${v}">${v}</button>`).join('');
+  box.hidden = false;
+  for (const b of box.querySelectorAll('button')) {
+    b.onclick = async () => {
+      const r = S.confirmQueue[0];
+      if (r) {
+        await Radars.update(r.id, { limit: +b.dataset.v });
+        Voice.speak(`Limite corrigido para ${b.dataset.v}.`);
+      }
+      answer(true);
+    };
+  }
+};
 $('#btnYes').onclick = () => answer(true);
 $('#btnNo').onclick = () => answer(false);
 
@@ -1732,6 +1784,7 @@ function renderSettings() {
   $('#sWalk').checked = s.walkTest;
   $('#sNight').value = s.nightMap;
   $('#sMascotFun').value = s.mascotFun || 'always';
+  $('#sCompanion').checked = companionOn();
   $('#sRecord').checked = s.recordDrives;
   $('#sCities').checked = s.logCities;
   $('#sSpeedWarn').checked = s.speedWarn !== false;
@@ -1772,6 +1825,7 @@ $('#btnSaveSettings').onclick = async () => {
   s.walkTest = $('#sWalk').checked;
   s.nightMap = $('#sNight').value;
   s.mascotFun = $('#sMascotFun').value;
+  s.companion = $('#sCompanion').checked;
   s.recordDrives = $('#sRecord').checked;
   s.logCities = $('#sCities').checked;
   s.speedWarn = $('#sSpeedWarn').checked;
