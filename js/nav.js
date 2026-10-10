@@ -2,6 +2,25 @@
 // radares, manobras, postos e cansaço. Também funciona sem rota ("só radar").
 import { dist, bearing, angleDiff, locate, makeLine, pointAt, fmtDist } from './geo.js';
 
+// 5.7 -> "5 reais e 70"
+export function sayMoney(v) {
+  const r = Math.floor(v + 1e-9), c = Math.round((v - r) * 100);
+  return `${r} rea${r === 1 ? 'l' : 'is'}${c ? ` e ${c}` : ''}`;
+}
+function payInfo(t) {
+  if (t.freeFlow) return 'Sem cabine: a cobrança é pela placa, pague depois pelo site ou aplicativo.';
+  const p = t.pay;
+  if (!p) return '';
+  const ok = [p.cash && 'dinheiro', p.card && 'cartão', p.pix && 'Pix', p.tag && 'tag'].filter(Boolean);
+  let out = ok.length ? `Aceita ${ok.length > 1 ? ok.slice(0, -1).join(', ') + ' e ' + ok[ok.length - 1] : ok[0]}.` : '';
+  if (p.pix === false) out += ' Não aceita Pix.';
+  if (p.card === false) out += ' Não aceita cartão.';
+  return out.trim();
+}
+function tollInfo(t) {
+  return `${t.price != null ? sayMoney(t.price) + '. ' : ''}${payInfo(t)}`.trim();
+}
+
 function sayDist(m) {
   if (m < 1000) return `${Math.max(50, Math.round(m / 50) * 50)} metros`;
   const km = Math.round(m / 100) / 10;
@@ -41,6 +60,7 @@ export class Nav {
     this.overWarned = false;
     this.lastOverSpeak = 0;
     this.dropSpoken = new Set(); // reduções de limite já avisadas
+    this.tollSpoken = new Map(); // praça de pedágio -> 1 (perto) / 2 (chegou)
     this.lastLimit = null;
     this.dropAt = null;
     this.lastStopEnd = 0; // fim da última parada (para silenciar pausa planejada)
@@ -218,6 +238,27 @@ export class Nav {
       speak('Você chegou ao destino!', { force: true });
     }
     state.arrived = this.arrived;
+
+    // Pedágio à frente: "Pedágio em 1 quilômetro. 5 reais e 70. Aceita dinheiro e cartão. Não aceita Pix."
+    if (!this.offRoute && !this.arrived) {
+      // Cabines da mesma praça (a menos de 800 m) contam como um pedágio só.
+      const nt = this.pois.find((x) => x.cat === 'toll' && x.along > p - 30 && x.along > (this.tollDone ?? -1e9) + 800);
+      if (nt) {
+        const d = nt.along - p;
+        if (this.tollCur == null || Math.abs(nt.along - this.tollCur) >= 800) this.tollCur = nt.along;
+        const key = this.tollCur;
+        const lvl = this.tollSpoken.get(key) || 0;
+        const far = kmh > 70 ? 1500 : 800;
+        if (lvl < 1 && d <= far && d > 250) {
+          this.tollSpoken.set(key, 1);
+          speak(`Pedágio em ${sayDist(d)}. ${tollInfo(nt)}`);
+        } else if (lvl < 2 && d <= 150) {
+          this.tollSpoken.set(key, 2);
+          this.tollDone = key;
+          speak(`Chegamos ao pedágio${nt.price != null ? `: ${sayMoney(nt.price)}` : ''}.${lvl < 1 ? ' ' + payInfo(nt) : ''}`.trim());
+        }
+      }
+    }
 
     // Postos e paradas à frente
     const avg = total / this.trip.duration; // m/s médio previsto

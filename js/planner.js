@@ -8,12 +8,28 @@ export const DEFAULT_PREFS = {
   breakMin: 20, // duração de cada pausa
   mealMin: 50, // duração de almoço/jantar
   nextDayHour: 8, // horário de saída nos dias seguintes
+  fuelType: 'gasolina',
   kmPerL: 11,
   fuelPrice: 6.29,
   tollAvg: 12,
 };
 
 const KM = 1000;
+
+// Preço sugerido por combustível (a pessoa ajusta para o da sua região).
+export const FUEL = {
+  alcool: { label: 'álcool', price: 4.29 },
+  gasolina: { label: 'gasolina', price: 6.29 },
+  diesel: { label: 'diesel', price: 6.09 },
+  gnv: { label: 'GNV', price: 4.89 },
+};
+
+// Gasto provável de combustível para uma distância (metros).
+export function fuelCost(distanceM, prefs) {
+  const P = { ...DEFAULT_PREFS, ...(prefs || {}) };
+  const liters = distanceM / KM / P.kmPerL;
+  return { liters, cost: liters * P.fuelPrice, label: FUEL[P.fuelType]?.label || 'combustível' };
+}
 
 // Momento do dia → tipo de refeição sugerida na pausa.
 function mealOf(date) {
@@ -169,6 +185,7 @@ export function buildPlan(trip, stops, prefs, depart) {
       distance: total,
       driveSec: trip.duration,
       liters,
+      fuelLabel: FUEL[P.fuelType]?.label || 'combustível',
       fuelCost: liters * P.fuelPrice,
       tollCost: toll.total,
       plazas: toll.plazas.length,

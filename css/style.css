@@ -467,3 +467,4 @@ body.picking #map { bottom: 0; }
 @keyframes k-ride { 0% { transform: translate(-120px, 40px) rotate(-12deg); opacity: 0; } 10% { opacity: 1; } 50% { transform: translate(0, -4px) rotate(-6deg); } 90% { opacity: 1; } 100% { transform: translate(120px, -50px) rotate(-14deg); opacity: 0; } }
 .k-body.k-gone { opacity: 0; transition: opacity .3s; }
 .krav:has(.k-gone) .k-shadow { opacity: 0; }
+.chips.pay .btn.sel { background: var(--accent); color: #002233; font-weight: 800; }

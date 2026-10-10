@@ -152,8 +152,21 @@ function toPoi(el, line, radius) {
     h24: tags.opening_hours === '24/7',
     hours: tags.opening_hours || '',
     phone: tags.phone || tags['contact:phone'] || '',
-    ...(cat === 'toll' ? { price: parsePrice(tags['charge:motorcar'] || tags.charge), freeFlow: tags.highway === 'toll_gantry' } : {}),
+    ...(cat === 'toll' ? { price: parsePrice(tags['charge:motorcar'] || tags.charge), freeFlow: tags.highway === 'toll_gantry', pay: payFrom(tags) } : {}),
   };
+}
+
+// Formas de pagamento do pedágio, quando o mapa informa (payment:cash, :pix…).
+function payFrom(tags) {
+  const v = (k) => tags['payment:' + k];
+  const pay = {};
+  if (v('cash')) pay.cash = v('cash') === 'yes';
+  const cards = ['credit_cards', 'debit_cards', 'cards', 'visa', 'mastercard'].map(v).filter(Boolean);
+  if (cards.length) pay.card = cards.includes('yes');
+  if (v('pix')) pay.pix = v('pix') === 'yes';
+  const tagsEl = ['sem_parar', 'conectcar', 'veloe', 'move_mais', 'taggy', 'electronic_toll_collection'].map(v).filter(Boolean);
+  if (tagsEl.length) pay.tag = tagsEl.includes('yes');
+  return Object.keys(pay).length ? pay : null;
 }
 
 // line: {pts,cum,length}. onProgress(fração). onPartial({radars, pois}):

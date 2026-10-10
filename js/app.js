@@ -1,7 +1,7 @@
 import { getSettings, saveSettings, listTrips, saveTrip, loadTrip, deleteTrip, uid, kv } from './store.js';
 import { geocode, route, cityAt, addressAt, roadDistances } from './routing.js';
 import { fetchAlongRoute, fuelGaps, CATEGORIES, lodgingNear, radarsNear, fetchSpeedLimits, tollPlazas } from './pois.js';
-import { buildPlan, DEFAULT_PREFS, money } from './planner.js';
+import { buildPlan, DEFAULT_PREFS, money, FUEL, fuelCost } from './planner.js';
 import { makeLine, locate, pointAt, fmtDist, fmtDur, fmtClock } from './geo.js';
 import * as Radars from './radars.js';
 import * as Music from './music.js';
@@ -620,7 +620,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v45';
+const APP_VERSION = 'v47';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -923,7 +923,8 @@ function showRouteBar(info) {
   if ($('#v-plan').classList.contains('collapsed')) setTimeout(() => setPlanCollapsed(true), 0);
   if (!info) return;
   $('#rbMain').textContent = `${info.distance < 1000 ? `${Math.round(info.distance)} metros` : fmtDist(info.distance)} · ${fmtDur(info.duration)}`;
-  $('#rbSub').textContent = `até ${info.dest} · chegada ${fmtClock(new Date(Date.now() + info.duration * 1000))}`;
+  const fc = fuelCost(info.distance, carPrefs());
+  $('#rbSub').textContent = `até ${info.dest} · chegada ${fmtClock(new Date(Date.now() + info.duration * 1000))} · ⛽ ~${moneyBR(fc.cost)}`;
 }
 
 // ▶ Iniciar: começa na hora; radares/postos/limites chegam em segundo plano.
@@ -972,6 +973,15 @@ async function fetchRouteDataLive(trip, attempt = 0) {
     drawTrip(trip, false);
     const n = S.nav.routeRadars.length;
     if (n) toast(`📷 ${n === 1 ? '1 radar' : n + ' radares'} no caminho${added ? ` (${added} novo${added > 1 ? 's' : ''} do mapa)` : ''}. Alertas ativos.`, 5000);
+    // Pedágios do caminho: quantos e quanto, de uma vez (sem precisar somar).
+    const ta = tollsAhead({ progress: S.nav.progress });
+    const fc = fuelCost(S.nav.line ? S.nav.line.length : trip.distance, carPrefs());
+    if (ta) {
+      Voice.speak(`${ta.n === 1 ? 'Um pedágio' : `${ta.n} pedágios`} no caminho, ${ta.guess ? 'cerca de ' : ''}${Math.round(ta.total)} reais. Com o combustível, a viagem sai por volta de ${Math.round(ta.total + fc.cost)} reais.`);
+      toast(`💰 ${ta.n} pedágio${ta.n > 1 ? 's' : ''} ${ta.guess ? '~' : ''}${moneyBR(ta.total)} + ⛽ ~${moneyBR(fc.cost)} = ~${moneyBR(ta.total + fc.cost)}. Toque no banner verde (☰) para ver a lista e informar valores.`, 8000);
+    } else if (trip.distance > 30000) {
+      toast(`⛽ Gasto provável com ${fc.label}: ~${moneyBR(fc.cost)} (sem pedágios no caminho).`, 5000);
+    }
     // Só fala se mudou o que já foi dito na saída (sem repetir).
     const nR = S.nav.routeRadars.filter((x) => !Radars.isHazard(x.r)).length;
     if (nR !== S.departRadars) Voice.speak(nR ? `Agora são ${nR === 1 ? 'um radar' : `${nR} radares`} no caminho.` : 'Nenhum radar conhecido no caminho.', { force: true });
@@ -1558,7 +1568,8 @@ function render(st) {
   }
   // chegada
   $('#etaClock').textContent = fmtClock(new Date(Date.now() + st.remainingSec * 1000));
-  $('#etaRem').textContent = `${fmtDist(st.remaining)} · ${fmtDur(st.remainingSec)}`;
+  const ta = tollsAhead(st);
+  $('#etaRem').textContent = `${fmtDist(st.remaining)} · ${fmtDur(st.remainingSec)}${ta ? ` · 💰 ${ta.guess ? '~' : ''}${moneyBR(ta.total)}` : ''}`;
   // postos e paradas
   const cards = [];
   S.cardPois = [];
@@ -1667,23 +1678,61 @@ const tollKey = (p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
 const tollAvg = () => S.settings.tripPrefs?.tollAvg ?? 12;
 const moneyBR = (v) => `R$ ${v.toFixed(2).replace('.', ',')}`;
 // Aplica nos pedágios da viagem os valores que você já informou.
+let tollPay = {};
+kv.get('tollPay').then((v) => { tollPay = v || {}; });
 function applyTollPrices(pois) {
-  for (const p of pois || []) if (p.cat === 'toll' && tollPrices[tollKey(p)] != null) p.price = tollPrices[tollKey(p)];
+  for (const p of pois || []) {
+    if (p.cat !== 'toll') continue;
+    if (tollPrices[tollKey(p)] != null) p.price = tollPrices[tollKey(p)];
+    if (tollPay[tollKey(p)]) p.pay = tollPay[tollKey(p)];
+  }
   return pois;
 }
-async function askTollPrice(plaza) {
-  const cur = tollPrices[tollKey(plaza)] ?? plaza.price;
-  const v = prompt(`Quanto custa este pedágio (carro)?\n${plaza.name !== 'Pedágio' ? plaza.name + '\n' : ''}Ex.: 12,40`, cur != null ? String(cur).replace('.', ',') : '');
-  if (v === null) return false;
-  const n = parseFloat(v.replace(',', '.'));
-  if (!(n >= 0)) return false;
-  // Guarda para todas as cabines da mesma praça (sentidos/cabines a < 1 km).
-  for (const p of (S.nav?.trip?.pois || S.trip?.pois || []).filter((x) => x.cat === 'toll' && Math.abs(x.along - plaza.along) < 1000)) tollPrices[tollKey(p)] = n;
-  tollPrices[tollKey(plaza)] = n;
-  await kv.set('tollPrices', tollPrices);
-  applyTollPrices(S.nav?.trip?.pois || S.trip?.pois);
-  toast(`💰 Pedágio salvo: ${moneyBR(n)}. Vale para as próximas viagens.`, 3000);
-  return true;
+const payText = (pay) => {
+  if (!pay) return '';
+  const ok = [pay.cash && '💵', pay.card && '💳', pay.pix && '📱Pix', pay.tag && '🏷️'].filter(Boolean).join(' ');
+  return ` · ${ok}${pay.pix === false ? ' (sem Pix)' : ''}`;
+};
+// Valor e formas de pagamento de um pedágio (vale para todas as cabines da praça).
+function askTollPrice(plaza) {
+  return new Promise((resolve) => {
+    const cur = tollPrices[tollKey(plaza)] ?? plaza.price;
+    const pay = { ...(tollPay[tollKey(plaza)] || plaza.pay || {}) };
+    $('#tmName').textContent = plaza.name && plaza.name !== 'Pedágio' ? plaza.name : 'Pedágio';
+    $('#tmPrice').value = cur != null ? String(cur.toFixed ? cur.toFixed(2) : cur).replace('.', ',') : '';
+    const paint = () => { for (const b of $('#tmPay').querySelectorAll('button')) b.classList.toggle('sel', !!pay[b.dataset.k]); };
+    for (const b of $('#tmPay').querySelectorAll('button')) b.onclick = () => { pay[b.dataset.k] = !pay[b.dataset.k]; paint(); };
+    paint();
+    $('#tollModal').hidden = false;
+    const close = (v) => { $('#tollModal').hidden = true; resolve(v); };
+    $('#tmCancel').onclick = () => close(false);
+    $('#tmSave').onclick = async () => {
+      const n = parseFloat($('#tmPrice').value.replace(',', '.'));
+      const marked = Object.values(pay).some(Boolean);
+      // Marcou alguma forma: as não marcadas viram "não aceita".
+      const payFull = marked ? { cash: !!pay.cash, card: !!pay.card, pix: !!pay.pix, tag: !!pay.tag } : null;
+      const same = (S.nav?.trip?.pois || S.trip?.pois || []).filter((x) => x.cat === 'toll' && Math.abs(x.along - plaza.along) < 1000);
+      for (const p of [...same, plaza]) {
+        if (n >= 0) tollPrices[tollKey(p)] = n;
+        if (payFull) tollPay[tollKey(p)] = payFull;
+      }
+      await kv.set('tollPrices', tollPrices);
+      await kv.set('tollPay', tollPay);
+      applyTollPrices(S.nav?.trip?.pois || S.trip?.pois);
+      toast(`💰 Pedágio salvo${n >= 0 ? ': ' + moneyBR(n) : ''}${payText(payFull)}. Vale para as próximas viagens.`, 3500);
+      close(true);
+    };
+  });
+}
+
+// Pedágios que ainda faltam na viagem e a soma (o que você ainda vai pagar).
+function tollsAhead(st) {
+  const pois = S.nav?.pois;
+  if (!pois?.length) return null;
+  const plazas = tollPlazas(applyTollPrices(pois)).filter((t) => t.along > (st?.progress ?? 0) - 10);
+  if (!plazas.length) return null;
+  const total = plazas.reduce((a, t) => a + (t.price ?? tollAvg()), 0);
+  return { n: plazas.length, total, guess: plazas.some((t) => t.price == null) };
 }
 
 // ---------- lista de manobras (tocar no banner verde) ----------
@@ -1699,11 +1748,13 @@ function renderSteps(st) {
   const items = [
     ...nav.steps.filter((s) => s.along > p - 10).map((s) => ({ along: s.along, arrow: s.arrow, text: s.type === 'arrive' ? 'Chegada ao destino' : s.text })),
     ...nav.routeRadars.filter((x) => x.along > p - 10).map((x) => ({ along: x.along, arrow: '📷', radar: true, text: `Radar${(x.r.limit || '') && ` · ${x.r.limit} km/h`}` })),
-    ...tolls.map((t) => ({ along: t.along, arrow: '💰', toll: t, text: `Pedágio${t.name && t.name !== 'Pedágio' ? ' ' + t.name : ''}${t.freeFlow ? ' (free-flow, sem cabine)' : ''} · ${t.price != null ? moneyBR(t.price) : `~${moneyBR(tollAvg())} (estimativa — toque para informar)`}` })),
+    ...tolls.map((t) => ({ along: t.along, arrow: '💰', toll: t, text: `Pedágio${t.name && t.name !== 'Pedágio' ? ' ' + t.name : ''}${t.freeFlow ? ' (free-flow, sem cabine)' : ''} · ${t.price != null ? moneyBR(t.price) : `~${moneyBR(tollAvg())} (estimativa — toque para informar)`}${payText(t.pay)}` })),
   ].sort((a, b) => a.along - b.along);
   const total = tolls.reduce((a, t) => a + (t.price ?? tollAvg()), 0);
   const guess = tolls.some((t) => t.price == null);
-  $('#stepsTolls').textContent = tolls.length ? `💰 ${tolls.length} pedágio${tolls.length > 1 ? 's' : ''} pela frente · ${guess ? '~' : ''}${moneyBR(total)}` : '';
+  const fcLeft = fuelCost(st?.remaining ?? Math.max(0, nav.line.length - p), carPrefs()).cost;
+  const remLeft = st?.remaining ?? Math.max(0, nav.line.length - p);
+  $('#stepsTolls').textContent = tolls.length ? `💰 ${tolls.length} pedágio${tolls.length > 1 ? 's' : ''} pela frente · ${guess ? '~' : ''}${moneyBR(total)} · com ⛽ ~${moneyBR(total + fcLeft)}` : (remLeft > 30000 ? `⛽ combustível até o destino ~${moneyBR(fcLeft)}` : '');
   $('#stepsList').innerHTML = items.length ? items.map((it, i) => `
     <li class="${it.radar ? 'radar' : ''}${it.toll ? 'toll' : ''} ${i === 0 ? 'next' : ''}" ${it.toll ? `data-toll="${i}"` : ''}>
       <span class="st-arrow">${it.arrow}</span>
@@ -2058,6 +2109,7 @@ function initTripForm() {
   $('#tpDepart').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const pr = { ...DEFAULT_PREFS, ...(S.settings.tripPrefs || {}) };
   $('#tpMaxH').value = pr.maxDriveH;
+  $('#tpFuelType').value = pr.fuelType || 'gasolina';
   $('#tpKmL').value = pr.kmPerL;
   $('#tpFuel').value = pr.fuelPrice;
   $('#tpToll').value = pr.tollAvg;
@@ -2073,11 +2125,22 @@ $('#tpAddStop').onclick = () => {
   row.querySelector('input').focus();
 };
 
+// Trocou o combustível: sugere o preço dele. Qualquer mudança no carro já
+// vale para a aba Rota (gasto provável de cada viagem).
+$('#tpFuelType').onchange = () => { $('#tpFuel').value = FUEL[$('#tpFuelType').value].price.toFixed(2); saveCarPrefs(); };
+for (const sel of ['#tpKmL', '#tpFuel', '#tpToll']) $(sel).addEventListener('change', () => saveCarPrefs());
+function saveCarPrefs() {
+  S.settings.tripPrefs = { ...(S.settings.tripPrefs || {}), ...tpPrefs() };
+  saveSettings(S.settings);
+}
+const carPrefs = () => ({ ...DEFAULT_PREFS, ...(S.settings.tripPrefs || {}) });
+
 function tpPrefs() {
   const num = (sel, def) => { const v = parseFloat($(sel).value.replace(',', '.')); return isFinite(v) && v > 0 ? v : def; };
   return {
     maxDriveH: num('#tpMaxH', 8),
     breakEveryMin: S.settings.fatigueMin,
+    fuelType: $('#tpFuelType').value,
     kmPerL: num('#tpKmL', 11),
     fuelPrice: num('#tpFuel', 6.29),
     tollAvg: parseFloat($('#tpToll').value.replace(',', '.')) >= 0 ? parseFloat($('#tpToll').value.replace(',', '.')) : 12,
@@ -2199,7 +2262,7 @@ function renderPlan(trip) {
         <div><b>${fmtDist(t.distance)}</b><small>distância</small></div>
         <div><b>${fmtDur(t.driveSec)}</b><small>dirigindo</small></div>
         <div><b>${plan.days.length}</b><small>${plan.days.length > 1 ? `dias · ${t.nights} noite${t.nights > 1 ? 's' : ''}` : 'dia'}</small></div>
-        <div><b>${money(t.fuelCost)}</b><small>⛽ ${Math.round(t.liters)} litros</small></div>
+        <div><b>${money(t.fuelCost)}</b><small>⛽ ${Math.round(t.liters)} ${t.fuelLabel === 'GNV' ? 'm³' : 'litros'}${t.fuelLabel ? ' de ' + t.fuelLabel : ''}</small></div>
         <div><b>${money(t.tollCost)}</b><small>💰 ${t.plazas} pedágio${t.plazas === 1 ? '' : 's'}*</small></div>
         <div><b>${money(t.fuelCost + t.tollCost)}</b><small>total estrada</small></div>
       </div>
