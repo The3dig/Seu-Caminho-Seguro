@@ -621,7 +621,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v48';
+const APP_VERSION = 'v49';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -941,6 +941,7 @@ $('#btnRouteCancel').onclick = () => {
 };
 
 $('#btnGo').onclick = async () => {
+  Voice.unlock(); // toque do usuário: garante a voz da saída (iPhone)
   let trip;
   if (S.alts.length) {
     trip = tripFromAlt(S.alts[S.altIdx]);
@@ -3179,6 +3180,7 @@ async function checkResume() {
   $('#resumeText').innerHTML = `<b>Viagem em andamento:</b> ${esc(a.name)}<br><small>O app foi fechado durante a navegação.</small>`;
   $('#resumeBox').hidden = false;
   $('#btnResume').onclick = async () => {
+    Voice.unlock();
     $('#resumeBox').hidden = true;
     const trip = a.tripId ? await loadTrip(a.tripId) : null;
     if (a.tripId && !trip) return toast('A viagem salva não existe mais.');

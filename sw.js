@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v48';
+const VERSION = 'v49';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 20000; // inclui o mapa baixado ao longo das rotas

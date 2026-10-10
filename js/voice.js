@@ -36,6 +36,25 @@ if ('speechSynthesis' in window) {
   const retry = setInterval(() => { pickVoice(); if (ptVoice || ++tries > 20) clearInterval(retry); }, 500);
 }
 
+// iPhone: quando o app vai para o fundo e volta, a voz e o som podem ficar
+// "travados" (as falas não saem mais). Ao voltar, destrava; e no próximo toque
+// na tela, reativa de vez (o iPhone exige um toque para liberar o áudio).
+let needUnlock = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    needUnlock = true;
+    try {
+      if ('speechSynthesis' in window) {
+        speechSynthesis.cancel();
+        if (speechSynthesis.paused) speechSynthesis.resume();
+      }
+      if (audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+    } catch { /* ok */ }
+  });
+  addEventListener('pointerdown', () => { if (needUnlock) { needUnlock = false; unlock(); } }, true);
+}
+
 // Precisa ser chamado a partir de um toque do usuário (política dos navegadores).
 export function unlock() {
   try {
@@ -72,7 +91,21 @@ export function speak(text, { urgent = false, force = false, tries = 0 } = {}) {
     return u;
   };
   duckHandler.duck();
-  if (!urgent) { speechSynthesis.speak(make()); return; }
+  if (!urgent) {
+    // Se em 1,5 s nada começou a tocar (voz travada depois de voltar ao app),
+    // fala de novo uma vez. Se outra fala estiver tocando, é só fila: espera.
+    const u = make();
+    let started = false;
+    const prevStart = u.onstart;
+    u.onstart = () => { started = true; prevStart?.(); };
+    speechSynthesis.speak(u);
+    setTimeout(() => {
+      if (started || speechSynthesis.speaking) return;
+      speechSynthesis.cancel();
+      setTimeout(() => speechSynthesis.speak(make()), 150);
+    }, 1500);
+    return;
+  }
   // Alerta urgente (radar): corta o que estiver falando. No Safari do iPhone,
   // falar logo depois de cancelar às vezes não sai som nenhum (foi o radar que
   // só avisou a 1000 m): só cancela se estiver falando, espera um instante, e
