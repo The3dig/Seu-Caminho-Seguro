@@ -620,7 +620,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v40';
+const APP_VERSION = 'v41';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1830,6 +1830,21 @@ function download(name, text, type) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 const stamp = () => new Date().toISOString().slice(0, 10);
+// Passa a sua base (radares, buracos, lombadas — inclusive os que você marcou
+// e confirmou) para outra pessoa: abre o compartilhar do celular (WhatsApp…).
+// Ela importa em "📥 Importar arquivo de radares".
+$('#btnShareRadars').onclick = async () => {
+  const list = await Radars.all();
+  if (!list.length) return toast('Você ainda não tem radares para enviar.', 3000);
+  const name = `radares-seu-caminho-seguro-${stamp()}.json`;
+  const file = new File([Radars.exportJSON(list)], name, { type: 'application/json' });
+  const text = `${list.length.toLocaleString('pt-BR')} radares do Seu Caminho Seguro. No app: aba Radares › 📥 Importar arquivo de radares.`;
+  try {
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Meus radares', text }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
+  download(name, Radars.exportJSON(list), 'application/json');
+  toast('📄 Arquivo salvo. Mande ele pelo WhatsApp; a pessoa importa em Radares › 📥 Importar.', 7000);
+};
 $('#btnExportJson').onclick = async () => download(`radares-${stamp()}.json`, Radars.exportJSON(await Radars.all()), 'application/json');
 $('#btnExportCsv').onclick = async () => download(`radares-${stamp()}.csv`, Radars.exportCSV(await Radars.all()), 'text/csv');
 $('#radarImport').onchange = async (e) => {

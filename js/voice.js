@@ -60,19 +60,39 @@ export function speak(text, { urgent = false, force = false, tries = 0 } = {}) {
     return;
   }
   if (tries >= 4) gaveUp = true; // aparelho sem vozes listadas: não espera de novo
-  if (urgent) speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = ptVoice?.lang?.replace('_', '-') || 'pt-BR';
-  // Uma voz inválida nunca pode impedir um alerta: cai para a voz padrão.
-  try { if (ptVoice) u.voice = ptVoice; } catch { /* voz padrão */ }
-  u.rate = settings.voiceRate || 1.05;
+  // iPhone: a voz às vezes fica "pausada" sozinha (ligação, notificação, Siri).
+  if (speechSynthesis.paused) speechSynthesis.resume();
+  const make = () => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = ptVoice?.lang?.replace('_', '-') || 'pt-BR';
+    // Uma voz inválida nunca pode impedir um alerta: cai para a voz padrão.
+    try { if (ptVoice) u.voice = ptVoice; } catch { /* voz padrão */ }
+    u.rate = settings.voiceRate || 1.05;
+    u.onend = u.onerror = () => { if (!speechSynthesis.pending) duckHandler.unduck(); };
+    return u;
+  };
   duckHandler.duck();
-  u.onend = u.onerror = () => { if (!speechSynthesis.pending) duckHandler.unduck(); };
-  speechSynthesis.speak(u);
+  if (!urgent) { speechSynthesis.speak(make()); return; }
+  // Alerta urgente (radar): corta o que estiver falando. No Safari do iPhone,
+  // falar logo depois de cancelar às vezes não sai som nenhum (foi o radar que
+  // só avisou a 1000 m): só cancela se estiver falando, espera um instante, e
+  // se a fala não começar em 1,5 s, tenta de novo.
+  const busy = speechSynthesis.speaking || speechSynthesis.pending;
+  if (busy) speechSynthesis.cancel();
+  const go = (again) => {
+    const u = make();
+    let started = false;
+    u.onstart = () => { started = true; };
+    speechSynthesis.speak(u);
+    if (again) setTimeout(() => { if (!started) go(false); }, 1500); // não começou: fala de novo
+  };
+  if (busy) setTimeout(() => go(true), 150); else go(true);
 }
 
 export function beep({ times = 2, freq = 880, dur = 0.16, gap = 0.1, force = false } = {}) {
   if ((!settings.beep && !force) || !audioCtx) return;
+  // O iPhone "suspende" o áudio depois de interrupções: acorda antes de bipar.
+  if (audioCtx.state !== 'running') audioCtx.resume?.().catch(() => {});
   const t0 = audioCtx.currentTime;
   for (let i = 0; i < times; i++) {
     const o = audioCtx.createOscillator();
