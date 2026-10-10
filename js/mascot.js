@@ -78,7 +78,7 @@ export class Mascot {
     if (still > 180000) { if (!this.sleeping) this.sleep(); return; }
     if (still > 3000 && now > this.nextAntic) {
       this.nextAntic = now + rand(6, 13) * 1000;
-      this.play(pick(['boom', 'boom', 'jump', 'roar', 'stomp', 'look', 'spin', 'espinhos', 'furia', 'salto', 'raio']));
+      this.play(pick(['boom', 'boom', 'jump', 'roar', 'stomp', 'look', 'spin', 'espinhos', 'furia', 'salto', 'raio', 'pesca', 'pesca', 'mao', 'mao', 'et', 'et']));
     }
   }
 
@@ -92,6 +92,7 @@ export class Mascot {
     this.current = null;
     this.body.className = 'k-body';
     this.fx.innerHTML = '';
+    this.say.hidden = true;
     this.say.hidden = true;
     this.setFrame();
   }
@@ -118,7 +119,7 @@ export class Mascot {
   }
 
   play(name) {
-    const dur = { jump: 1300, roar: 1600, stomp: 1300, look: 2200, spin: 1100, boom: 3200, whip: 1400, party: 4200, espinhos: 1800, furia: 2200, salto: 2000, raio: 3000 }[name] || 1500;
+    const dur = { jump: 1300, roar: 1600, stomp: 1300, look: 2200, spin: 1100, boom: 3200, whip: 1400, party: 4200, espinhos: 1800, furia: 2200, salto: 2000, raio: 3000, pesca: 5200, mao: 4200, et: 4800 }[name] || 1500;
     this.current = name;
     this.busyUntil = Date.now() + dur;
     this.later(dur, () => { this.override = null; this.current = null; this.setFrame(); });
@@ -182,6 +183,45 @@ export class Mascot {
         });
         this.later(1050, () => this.bubble('Esmagamento!', 900));
         break;
+      case 'pesca': { // pescando: vara, linha, boia… e às vezes vem uma bota
+        this.override = 'k_right_0';
+        const rod = this.spawn('k-rod', 10, -30, '', 5100);
+        const line = this.spawn('k-line', 46, -58, '', 5100);
+        const bob = this.spawn('k-bobber', 46, -4, '', 5100);
+        this.later(2600, () => { bob.classList.add('bite'); this.bubble('!', 600); });
+        this.later(3300, () => {
+          rod.classList.add('pull'); line.remove(); bob.remove();
+          const boot = Math.random() < 0.25;
+          this.spawn('k-catch', 40, -12, boot ? '👢' : '🐟', 1800);
+          this.bubble(boot ? '…uma bota?' : 'Peguei!', 1700);
+          this.later(150, () => this.bodyAnim('k-hop', 500));
+        });
+        break;
+      }
+      case 'mao': { // uma mão gigante desce, levanta ele… e ele solta fogo de raiva
+        this.override = 'k_down_0';
+        const hand = this.spawn('k-hand', 0, -150, '🫳', 2600);
+        this.later(900, () => { this.body.classList.add('k-lift'); hand.classList.add('up'); this.override = 'k_down_1'; this.setFrame(); this.bubble('Ei!', 800); });
+        this.later(2100, () => { this.body.classList.remove('k-lift'); this.body.classList.add('k-drop'); hand.remove(); });
+        this.later(2500, () => {
+          this.body.classList.remove('k-drop');
+          this.bodyAnim('k-shake', 900);
+          this.bubble('GRRRR!', 1400);
+          for (let i = 0; i < 10; i++) {
+            const a = (i / 10) * Math.PI * 2;
+            this.spawn('k-flame', Math.cos(a) * 46, Math.sin(a) * 22 - 18, '🔥', 450); // fogo em tudo, num piscar
+          }
+          this.spawn('k-flash', 0, -30, '', 300);
+        });
+        break;
+      }
+      case 'et': { // a bicicleta voando na frente da lua
+        this.spawn('k-moon', 0, -78, '', 4700);
+        this.body.classList.add('k-gone');
+        this.later(400, () => this.spawn('k-etride', 0, -78, `<span class="bike">🚲</span><img src="${BASE}k_right_1.png" alt="">`, 3300));
+        this.later(3900, () => { this.body.classList.remove('k-gone'); this.bodyAnim('k-hop', 600); this.bubble('Minha casa…', 1200); });
+        break;
+      }
       case 'raio': // Raio da Essência: o mesmo prediozinho, mas com raio roxo
         this.boom(side, 1, true);
         break;

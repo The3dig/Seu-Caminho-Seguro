@@ -428,3 +428,42 @@ body.picking #map { bottom: 0; }
 .drive-side .btn { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .drive-side .btn.moved { position: fixed; z-index: 7; }
 .drive-side .btn.dragging { transform: scale(1.18); box-shadow: 0 0 0 3px var(--accent), 0 6px 18px #000c; opacity: .92; }
+
+/* Botões da viagem bem visíveis em qualquer lugar do mapa (claro ou escuro) */
+.drive-side .btn.round { background: #0f1720f5; border: 2px solid var(--accent); box-shadow: 0 0 0 3px #0009, 0 4px 14px #000c; font-size: 24px; }
+.drive-side .btn.stop-pill { border: 2px solid #ff8a80; box-shadow: 0 0 0 3px #0009, 0 4px 14px #000c; }
+.drive-side .btn.moved { box-shadow: 0 0 0 3px #0009, 0 0 14px #33c3ffaa, 0 4px 14px #000c; }
+
+/* Kravenox: pescando */
+.k-rod { width: 4px; height: 46px; margin-top: -46px; background: #e0a96d; box-shadow: 0 0 0 1px #3a2412; border-radius: 2px; transform-origin: 50% 100%; transform: rotate(40deg); }
+.k-rod.pull { animation: k-pull .5s ease-out forwards; }
+@keyframes k-pull { to { transform: rotate(-10deg); } }
+.k-line { width: 1px; height: 54px; background: #fff; opacity: .95; box-shadow: 0 0 2px #000; }
+.k-bobber { width: 9px; height: 9px; margin: -9px 0 0 -4px; border-radius: 50%; background: linear-gradient(#ff3b3b 50%, #fff 50%); animation: k-bob 1s ease-in-out infinite; }
+.k-bobber.bite { animation: k-bite .25s ease-in-out 3; }
+@keyframes k-bob { 50% { transform: translateY(2px); } }
+@keyframes k-bite { 50% { transform: translateY(7px) scale(.8); } }
+.k-catch { font-size: 28px; line-height: 1; z-index: 2; filter: drop-shadow(0 0 3px #fff); transform: translate(-50%, -50%); animation: k-catch 1.6s ease-out forwards; }
+@keyframes k-catch { 0% { transform: translate(-50%, 0) rotate(0); } 45% { transform: translate(-50%, -260%) rotate(-25deg) scale(1.2); } 75%,100% { transform: translate(-70%, -220%) rotate(10deg) scale(1.2); opacity: 1; } }
+/* a mão gigante */
+.k-hand { font-size: 56px; line-height: 1; transform: translate(-50%, 0); animation: k-hand-in .8s ease-out forwards; }
+.k-hand.up { animation: k-hand-up 1.2s ease-in-out forwards; }
+@keyframes k-hand-in { from { transform: translate(-50%, -60px); opacity: 0; } to { transform: translate(-50%, 58px); opacity: 1; } }
+@keyframes k-hand-up { from { transform: translate(-50%, 58px); } to { transform: translate(-50%, 8px); } }
+.k-body.k-lift { animation: k-lift 1.2s ease-in-out forwards; }
+@keyframes k-lift { 0% { transform: translateX(-50%) translateY(0); } 20%,40%,60%,80% { transform: translateX(calc(-50% - 2px)) translateY(-30px); } 30%,50%,70%,100% { transform: translateX(calc(-50% + 2px)) translateY(-50px); } }
+.k-body.k-drop { animation: k-drop .4s ease-in forwards; }
+@keyframes k-drop { from { transform: translateX(-50%) translateY(-50px); } to { transform: translateX(-50%) translateY(0) scale(1.15, .85); } }
+.k-flame { font-size: 22px; line-height: 1; transform: translate(-50%, -50%) scale(.3); animation: k-flame .45s ease-out forwards; }
+@keyframes k-flame { 40% { transform: translate(-50%, -50%) scale(1.4); opacity: 1; } 100% { transform: translate(-50%, -70%) scale(1); opacity: 0; } }
+.k-flash { width: 140px; height: 90px; margin: -45px 0 0 -70px; border-radius: 50%; background: radial-gradient(#ffb21a, #ff3b1a88 50%, transparent 70%); animation: k-flash .3s ease-out forwards; }
+@keyframes k-flash { from { opacity: .9; transform: scale(.5); } to { opacity: 0; transform: scale(1.3); } }
+/* a bicicleta voando na frente da lua */
+.k-moon { width: 84px; height: 84px; margin: -42px 0 0 -42px; border-radius: 50%; background: radial-gradient(circle at 40% 40%, #fffbe6, #f3e7b0 60%, #d8c98a); box-shadow: 0 0 22px #fff6c8aa; animation: k-moon 4.7s ease-in-out forwards; }
+@keyframes k-moon { 0% { opacity: 0; transform: scale(.6); } 12%,85% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
+.k-etride { width: 40px; height: 34px; margin: -17px 0 0 -20px; animation: k-ride 3.3s linear forwards; filter: brightness(0); }
+.k-etride .bike { position: absolute; left: 4px; top: 12px; font-size: 26px; line-height: 1; }
+.k-etride img { position: absolute; left: 10px; top: -2px; height: 22px; image-rendering: pixelated; }
+@keyframes k-ride { 0% { transform: translate(-120px, 40px) rotate(-12deg); opacity: 0; } 10% { opacity: 1; } 50% { transform: translate(0, -4px) rotate(-6deg); } 90% { opacity: 1; } 100% { transform: translate(120px, -50px) rotate(-14deg); opacity: 0; } }
+.k-body.k-gone { opacity: 0; transition: opacity .3s; }
+.krav:has(.k-gone) .k-shadow { opacity: 0; }
