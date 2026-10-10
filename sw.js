@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v41';
+const VERSION = 'v42';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 20000; // inclui o mapa baixado ao longo das rotas
@@ -11,12 +11,16 @@ const SHELL = [
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   ...['k_portrait', 'k_down_0', 'k_down_1', 'k_up_0', 'k_up_1', 'k_left_0', 'k_left_1', 'k_right_0', 'k_right_1',
     'k_left_w0', 'k_left_w1', 'k_left_w2', 'k_left_w3', 'k_right_w0', 'k_right_w1', 'k_right_w2', 'k_right_w3'].map((n) => `icons/kravenox/${n}.png`),
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'lib/leaflet/leaflet.css', 'lib/leaflet/leaflet.js',
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(APP).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // Guarda o app inteiro e deixa uma marca "pronto" (o app mostra
+  // "✓ pronto para usar sem internet" quando ela existe).
+  e.waitUntil(caches.open(APP).then(async (c) => {
+    await c.addAll(SHELL);
+    await c.put('__pronto__', new Response(VERSION));
+  }).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -68,7 +72,7 @@ self.addEventListener('fetch', (e) => {
     // navegador (senão a versão nova demorava a chegar).
     const req = url.origin === location.origin ? fetch(url.href, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(e.request);
     const net = req.then((res) => {
-      if (res.ok && (url.origin === location.origin || url.hostname === 'unpkg.com')) cache.put(e.request, res.clone());
+      if (res.ok && (url.origin === location.origin)) cache.put(e.request, res.clone());
       return res;
     });
     const timeout = new Promise((r) => setTimeout(r, 3000, null));

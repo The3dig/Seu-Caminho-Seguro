@@ -620,7 +620,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v41';
+const APP_VERSION = 'v42';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -2746,14 +2746,24 @@ ${d.track.map(([lat, lon]) => `<trkpt lat="${lat}" lon="${lon}"/>`).join('\n')}
   download(`viagem-${new Date(d.start).toISOString().slice(0, 10)}.gpx`, gpx, 'application/gpx+xml');
 }
 
-const BACKUP_KEYS = ['settings', 'radars', 'places', 'recents', 'drives', 'cities', 'cityQueue', 'trips'];
-$('#btnBackup').onclick = async () => {
+const BACKUP_KEYS = ['settings', 'radars', 'places', 'recents', 'drives', 'cities', 'cityQueue', 'trips', 'routePrefs', 'tollPrices', 'carImage'];
+async function collectBackup() {
   const data = {};
   for (const k of BACKUP_KEYS) data[k] = await kv.get(k);
   for (const t of data.trips || []) data['trip:' + t.id] = await kv.get('trip:' + t.id);
   for (const d of data.drives || []) data['drive:' + d.id] = await kv.get('drive:' + d.id);
-  const json = JSON.stringify({ app: 'seu-caminho-seguro', kind: 'backup', version: 1, created: new Date().toISOString(), data });
-  download(`backup-caminho-seguro-${stamp()}.json`, json, 'application/json');
+  return { app: 'seu-caminho-seguro', kind: 'backup', version: 1, created: new Date().toISOString(), data };
+}
+async function restoreBackup(b) {
+  if (b.kind !== 'backup' || !b.data) throw new Error('não é um backup deste app');
+  if (!confirm(`Trazer os dados de ${new Date(b.created).toLocaleString('pt-BR')}? Os dados atuais deste aparelho serão substituídos.`)) return false;
+  for (const [k, v] of Object.entries(b.data)) if (v != null) await kv.set(k, v);
+  toast('✅ Dados restaurados. Reabrindo…', 2500);
+  setTimeout(() => location.reload(), 1500);
+  return true;
+}
+$('#btnBackup').onclick = async () => {
+  download(`backup-caminho-seguro-${stamp()}.json`, JSON.stringify(await collectBackup()), 'application/json');
   toast('💾 Backup salvo. Guarde o arquivo (ex.: no iCloud Drive / Google Drive).', 6000);
 };
 $('#restoreFile').onchange = async (e) => {
@@ -2761,16 +2771,86 @@ $('#restoreFile').onchange = async (e) => {
   e.target.value = '';
   if (!file) return;
   try {
-    const b = JSON.parse(await file.text());
-    if (b.kind !== 'backup' || !b.data) throw new Error('não é um backup deste app');
-    if (!confirm(`Restaurar o backup de ${new Date(b.created).toLocaleString('pt-BR')}? Os dados atuais deste celular serão substituídos.`)) return;
-    for (const [k, v] of Object.entries(b.data)) if (v != null) await kv.set(k, v);
-    toast('✅ Backup restaurado. Reabrindo…', 2500);
-    setTimeout(() => location.reload(), 1500);
+    await restoreBackup(JSON.parse(await file.text()));
   } catch (err) {
     toast('⚠ Arquivo inválido: ' + err.message);
   }
 };
+
+// ---------- Passar meus dados (Safari → ícone da Tela de Início, ou outro celular) ----------
+// Um código de texto (compactado) para copiar e colar, como no jogo do Kravenox.
+const CODE_PREFIX = 'CAMINHO1:';
+async function toCode(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let out = bytes, tag = 'J';
+  if (typeof CompressionStream !== 'undefined') {
+    out = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+    tag = 'G';
+  }
+  let bin = '';
+  for (let i = 0; i < out.length; i += 0x8000) bin += String.fromCharCode(...out.subarray(i, i + 0x8000));
+  return CODE_PREFIX + tag + btoa(bin);
+}
+async function fromCode(code) {
+  const t = code.trim().replace(/\s+/g, '');
+  if (!t.startsWith(CODE_PREFIX)) throw new Error('não é um código do Seu Caminho Seguro');
+  const tag = t[CODE_PREFIX.length];
+  const bin = atob(t.slice(CODE_PREFIX.length + 1));
+  let bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  if (tag === 'G') bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+$('#btnCopyData').onclick = async () => {
+  try {
+    const code = await toCode(await collectBackup());
+    await navigator.clipboard.writeText(code);
+    toast(`📋 Dados copiados (${Math.round(code.length / 1024)} KB). Abra o app pelo ícone (ou no outro celular) › Ajustes › Colar meus dados. Pode mandar pelo WhatsApp também.`, 9000);
+  } catch (err) {
+    // Sem permissão de copiar: mostra o código para copiar à mão.
+    const box = $('#pasteBox');
+    box.hidden = false;
+    box.value = await toCode(await collectBackup());
+    box.select();
+    toast('Selecione o código abaixo e copie.', 5000);
+  }
+};
+$('#btnPasteData').onclick = async () => {
+  const box = $('#pasteBox');
+  let code = box.hidden ? '' : box.value;
+  if (!code) {
+    try { code = await navigator.clipboard.readText(); } catch { /* sem permissão */ }
+  }
+  if (!code || !code.includes(CODE_PREFIX)) {
+    box.hidden = false;
+    box.value = '';
+    box.focus();
+    toast('Cole o código no campo abaixo e toque em “Colar meus dados” de novo.', 6000);
+    return;
+  }
+  try {
+    await restoreBackup(await fromCode(code.slice(code.indexOf(CODE_PREFIX))));
+  } catch (err) {
+    toast('⚠ Código inválido: ' + err.message, 6000);
+  }
+};
+
+// ---------- Funciona sem internet? ----------
+const standalone = () => window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+async function checkOffline() {
+  const el = $('#offlineStatus');
+  if (!('serviceWorker' in navigator) || !('caches' in window)) return;
+  const ready = await caches.match('__pronto__').catch(() => null);
+  el.hidden = false;
+  el.textContent = ready ? '✓ pronto para usar sem internet' : '⏳ guardando o app no celular…';
+  el.classList.toggle('ok', !!ready);
+  if (!ready) setTimeout(checkOffline, 2000);
+}
+function showInstallCard() {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  $('#installCard').hidden = !ios || standalone() || !!S.settings.installSeen;
+  if (!$('#installCard').hidden) $('#tipCard').hidden = true; // um cartão por vez: instalar primeiro
+}
+$('#installNo').onclick = async () => { S.settings.installSeen = true; await saveSettings(S.settings); $('#installCard').hidden = true; };
 
 // ================= Sugestões enquanto digita =================
 const fmtKm = (k) => (k == null ? '' : k < 10 ? `${k.toFixed(1).replace('.', ',')} km` : `${Math.round(k)} km`);
@@ -2961,6 +3041,10 @@ async function init() {
     await saveSettings(S.settings);
   }
   showPersonalizeTip();
+  showInstallCard();
+  checkOffline();
+  // Pede ao celular para não apagar os dados do app (radares, viagens…).
+  navigator.storage?.persist?.().catch(() => {});
   setSearchKey(S.settings.tomtomKey || CONFIG.tomtomKey);
   useTileKey(S.settings.tomtomKey || CONFIG.tomtomKey);
   Voice.configure(S.settings);

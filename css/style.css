@@ -422,3 +422,6 @@ body.picking #map { bottom: 0; }
 .k-wave { width: 20px; height: 8px; margin: -4px 0 0 -10px; border-radius: 50%; border: 3px solid #ffb21a; animation: k-wave .9s ease-out forwards; }
 @keyframes k-wave { to { transform: scale(5); opacity: 0; } }
 .k-beam.essence { background: linear-gradient(90deg, #f3d9ff, #b04dff 40%, #6a00ff); box-shadow: 0 0 8px #b04dff, 0 0 16px #6a00ff; }
+.offline-status { position: absolute; left: 14px; bottom: calc(8px + var(--safe-b)); margin: 0; font-size: 12px; opacity: .75; }
+.offline-status.ok { color: #7ee2a0; opacity: .95; }
+#pasteBox { width: 100%; margin-top: 8px; font-size: 12px; }

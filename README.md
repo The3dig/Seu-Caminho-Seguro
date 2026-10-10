@@ -58,7 +58,9 @@ O app é só um site estático (HTML/JS), sem servidor. O jeito mais fácil é o
 1. No GitHub, abra o repositório → **Settings → Pages**.
 2. Em *Source*, escolha **Deploy from a branch**, branch `main` (ou a branch deste app) e pasta `/ (root)`.
 3. Em ~1 min o endereço aparece (algo como `https://SEU-USUARIO.github.io/Seu-Caminho-Seguro/`).
-4. Abra no **Chrome do Android** (ou Safari no iPhone) → menu → **Adicionar à tela inicial**.
+4. Abra no **Chrome do Android** (ou **Safari** no iPhone) e espere aparecer, na abertura, **“✓ pronto para usar sem internet”**.
+5. Menu (Android) ou **Compartilhar › Adicionar à Tela de Início** (iPhone). Abra sempre pelo ícone: funciona com ou sem internet e se atualiza sozinho quando tiver sinal.
+6. No iPhone, o ícone guarda os dados separado do Safari: em **Ajustes › 📦 Passar meus dados**, toque em *Copiar meus dados* no Safari e em *Colar meus dados* no ícone (serve também para passar para outro celular, pelo WhatsApp).
 
 > O GPS só funciona em `https://` (ou `localhost`), por isso o GitHub Pages é ideal.
 
@@ -120,6 +122,8 @@ js/config.js          Client ID do Spotify embutido (opcional)
 js/music.js           player offline
 js/spotify.js         autorização e controle do Spotify
 js/voice.js           voz pt-BR e bipes
+js/companion.js       Kravenox companheiro (falas na viagem)
+lib/leaflet/          biblioteca do mapa (guardada no app, funciona offline)
 js/store.js           armazenamento no celular (IndexedDB)
 sw.js                 funcionamento offline
 ```
