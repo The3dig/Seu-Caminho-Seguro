@@ -215,3 +215,42 @@ export const active = {
   set: (v) => kv.set('activeDrive', { ...v, updated: Date.now() }),
   clear: () => kv.del('activeDrive'),
 };
+
+// ---------- Caminho preferido (aprende com o que você dirige) ----------
+// De dia a avenida da praia, de noite a de cima: o app guarda o caminho que
+// você escolheu ou dirigiu de verdade, separado por dia/noite, e da próxima
+// vez oferece ele primeiro.
+export const dayPart = (d = new Date()) => { const h = d.getHours(); return h >= 6 && h < 18 ? 'dia' : 'noite'; };
+
+// ~8 pontos do meio do caminho, igualmente espaçados (o OSRM passa por eles).
+function sampleVia(pts, n = 8) {
+  const P = pts.map((p) => (Array.isArray(p) ? { lat: p[0], lon: p[1] } : p));
+  const cum = [0];
+  for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + dist(P[i - 1], P[i]));
+  const total = cum[cum.length - 1];
+  if (total < 800) return [];
+  const out = [];
+  let j = 0;
+  for (let k = 1; k <= n; k++) {
+    const target = (total * k) / (n + 1);
+    while (j < cum.length - 1 && cum[j] < target) j++;
+    out.push([+P[j].lat.toFixed(5), +P[j].lon.toFixed(5)]);
+  }
+  return out;
+}
+
+export async function saveRoutePref(from, to, pts, part = dayPart()) {
+  if (!from || !to || dist(from, to) < 500 || !pts || pts.length < 3) return;
+  const via = sampleVia(pts);
+  if (!via.length) return;
+  const list = (await kv.get('routePrefs')) || [];
+  const rec = { from: { lat: from.lat, lon: from.lon }, to: { lat: to.lat, lon: to.lon }, part, via, updated: Date.now() };
+  const i = list.findIndex((p) => p.part === part && dist(p.from, from) < 600 && dist(p.to, to) < 400);
+  if (i >= 0) list[i] = rec; else list.push(rec);
+  await kv.set('routePrefs', list.slice(-80));
+}
+
+export async function findRoutePref(from, to, part = dayPart()) {
+  const list = (await kv.get('routePrefs')) || [];
+  return list.find((p) => p.part === part && dist(p.from, from) < 600 && dist(p.to, to) < 400) || null;
+}

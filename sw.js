@@ -1,8 +1,8 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v39';
+const VERSION = 'v40';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
-const MAX_TILES = 6000;
+const MAX_TILES = 20000; // inclui o mapa baixado ao longo das rotas
 
 const SHELL = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
@@ -26,7 +26,10 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
+let trimAt = 0;
 async function trimTiles() {
+  if (Date.now() - trimAt < 30000) return; // no máximo a cada 30 s (download do caminho guarda milhares)
+  trimAt = Date.now();
   const c = await caches.open(TILES);
   const keys = await c.keys();
   for (let i = 0; i < keys.length - MAX_TILES; i++) await c.delete(keys[i]);
@@ -37,14 +40,15 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
 
   // Imagens do mapa: usa a cópia salva; se não tiver, baixa e guarda.
-  if (url.hostname.endsWith('tile.openstreetmap.org')) {
+  if (url.hostname.endsWith('tile.openstreetmap.org') || (url.hostname === 'api.tomtom.com' && url.pathname.startsWith('/map/'))) {
     e.respondWith((async () => {
       const c = await caches.open(TILES);
       const hit = await c.match(e.request);
       if (hit) return hit;
       try {
         const res = await fetch(e.request);
-        if (res.ok) { c.put(e.request, res.clone()); trimTiles(); }
+        // "opaque" = imagem pedida sem CORS: também serve para mostrar offline.
+        if (res.ok || res.type === 'opaque') { c.put(e.request, res.clone()); trimTiles(); }
         return res;
       } catch {
         return new Response('', { status: 504 });

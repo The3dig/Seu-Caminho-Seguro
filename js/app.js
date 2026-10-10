@@ -40,10 +40,91 @@ const S = {
 
 // ================= Mapa =================
 const map = L.map('map', { zoomControl: false, attributionControl: true }).setView([-15.8, -47.9], 4);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Mapa: com a chave da TomTom usa o mapa dela (pode ser baixado ao longo da
+// rota para funcionar sem sinal); sem chave, ou se a TomTom falhar, o OpenStreetMap.
+const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const ttTileUrl = (key) => `https://api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=256`;
+let tileKey = CONFIG.tomtomKey || '';
+const baseLayer = L.tileLayer(tileKey ? ttTileUrl(tileKey) : OSM_URL, {
   maxZoom: 19,
-  attribution: '© OpenStreetMap',
+  crossOrigin: 'anonymous', // assim o service worker consegue guardar as imagens do mapa
+  attribution: tileKey ? '© TomTom · © OpenStreetMap' : '© OpenStreetMap',
 }).addTo(map);
+let tileErrors = 0;
+baseLayer.on('tileerror', () => {
+  // Muitos erros com internet (chave recusada, cota do dia): volta para o OSM.
+  if (tileKey && navigator.onLine && ++tileErrors > 12) {
+    tileKey = '';
+    baseLayer.setUrl(OSM_URL);
+    map.attributionControl.removeAttribution('© TomTom · © OpenStreetMap').addAttribution('© OpenStreetMap');
+  }
+});
+baseLayer.on('tileload', () => { tileErrors = Math.max(0, tileErrors - 1); });
+function useTileKey(key) {
+  if (!key || key === tileKey) return;
+  tileKey = key;
+  baseLayer.setUrl(ttTileUrl(key));
+}
+
+// ---------- Mapa do caminho para usar sem sinal ----------
+// Baixa os pedaços do mapa numa faixa dos dois lados da rota (zoom 12 a 16;
+// viagens longas sem o 16). Ficam guardados pelo service worker.
+function lon2x(lon, z) { return Math.floor(((lon + 180) / 360) * 2 ** z); }
+function lat2y(lat, z) { const r = (lat * Math.PI) / 180; return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z); }
+function routeTiles(pts, maxTiles = 6000) {
+  const P = pts.map(([lat, lon]) => ({ lat, lon }));
+  const build = (zooms) => {
+    const set = new Set();
+    for (const z of zooms) {
+      const step = (40075016 * Math.cos((P[0].lat * Math.PI) / 180)) / 2 ** z / 2; // meio pedaço
+      let acc = 0;
+      for (let i = 0; i < P.length; i++) {
+        if (i > 0) {
+          const a = P[i - 1], b = P[i];
+          const d = Math.hypot((b.lat - a.lat) * 111320, (b.lon - a.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180));
+          const n = Math.ceil(d / step);
+          for (let k = 1; k <= n; k++) {
+            const t = k / n, lat = a.lat + (b.lat - a.lat) * t, lon = a.lon + (b.lon - a.lon) * t;
+            const x = lon2x(lon, z), y = lat2y(lat, z);
+            for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) set.add(`${z}/${x + dx}/${y + dy}`);
+          }
+          acc += d;
+        } else {
+          const x = lon2x(P[0].lon, z), y = lat2y(P[0].lat, z);
+          for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) set.add(`${z}/${x + dx}/${y + dy}`);
+        }
+      }
+    }
+    return [...set];
+  };
+  let tiles = build([12, 13, 14, 15, 16]);
+  if (tiles.length > maxTiles) tiles = build([11, 12, 13, 14, 15]);
+  if (tiles.length > maxTiles) tiles = build([10, 11, 12, 13, 14]);
+  return tiles.slice(0, maxTiles * 1.5);
+}
+let mapPrefetch = null;
+async function prefetchRouteMap(trip, { quiet = false } = {}) {
+  if (!tileKey || !navigator.onLine || !trip?.pts?.length) return;
+  if (mapPrefetch === trip.id) return;
+  mapPrefetch = trip.id;
+  const tiles = routeTiles(trip.pts);
+  const url = (t) => ttTileUrl(tileKey).replace('{z}/{x}/{y}', t);
+  let done = 0, fail = 0, i = 0;
+  if (!quiet) toast(`🗺️ Baixando o mapa do caminho para usar sem sinal… (0%)`, 4000);
+  const worker = async () => {
+    while (i < tiles.length) {
+      const t = tiles[i++];
+      try { const r = await fetch(url(t)); if (!r.ok) fail++; } catch { fail++; }
+      done++;
+      if (!quiet && done % 150 === 0) toast(`🗺️ Baixando o mapa do caminho… (${Math.round((done / tiles.length) * 100)}%)`, 3000);
+      if (fail > 40) return; // sem internet ou cota acabou: para
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+  trip.mapSaved = fail <= 40 ? Date.now() : 0;
+  if (!quiet) toast(fail > 40 ? '⚠ Não deu para baixar o mapa inteiro do caminho (sinal fraco?). O que baixou fica guardado.' : `🗺️ Mapa do caminho salvo: funciona sem sinal (${tiles.length.toLocaleString('pt-BR')} pedaços).`, 5000);
+  if (fail > 40) mapPrefetch = null;
+}
 const layers = {
   alts: L.layerGroup().addTo(map),
   route: L.layerGroup().addTo(map),
@@ -539,7 +620,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v39';
+const APP_VERSION = 'v40';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -729,11 +810,24 @@ $('#btnRoute').onclick = async () => {
     routeBtn('🛣️ Calculando a rota… (toque para cancelar)');
     const alts = await route([from, ...vias, dest], { foot: S.settings.walkTest });
     if (!alive()) return;
+    // Seu caminho de sempre (de dia / de noite) entra como primeira opção.
+    if (!vias.length && !S.settings.walkTest) {
+      const pref = await Places.findRoutePref(from, dest).catch(() => null);
+      if (pref) {
+        try {
+          const [pr] = await route([from, ...pref.via.map(([lat, lon]) => ({ lat, lon })), dest], { silentVias: true });
+          const same = alts.findIndex((a) => Math.abs(a.distance - pr.distance) / pr.distance < 0.03);
+          if (same >= 0) { const [a] = alts.splice(same, 1); a.pref = pref.part; alts.unshift(a); } else { pr.pref = pref.part; alts.unshift(pr); }
+        } catch { /* sem internet ou rota estranha: segue com as opções normais */ }
+      }
+    }
+    if (!alive()) return;
     S.points = [from, ...vias, dest];
     S.alts = alts;
     Places.addRecent(dest).then(renderSuggestions);
     S.altIdx = 0;
     renderAlts();
+    if (alts.length > 1) toast(alts[0].pref ? `⭐ Seu caminho de ${alts[0].pref} vem primeiro. Há ${alts.length - 1} outra${alts.length > 2 ? 's' : ''} opç${alts.length > 2 ? 'ões' : 'ão'} em cinza no mapa.` : `🛣️ ${alts.length} opções: toque na linha cinza para trocar.`, 5000);
   } catch (e) {
     if (alive() && e.message !== 'Busca cancelada.') toast('⚠ ' + e.message.charAt(0).toUpperCase() + e.message.slice(1), 9000);
   } finally {
@@ -754,7 +848,7 @@ function renderAlts() {
   const pts = S.points.map((p, i) => `<div class="sub">${i === 0 ? '🟢' : i === S.points.length - 1 ? '🏁' : '📍'} ${esc(p.label)}</div>`).join('');
   box.innerHTML = `<div class="geo-pick">${pts}</div>` + S.alts.map((a, i) => `
     <div class="alt ${i === S.altIdx ? 'sel' : ''}" data-i="${i}">
-      <b>${fmtDist(a.distance)} · ${fmtDur(a.duration)}</b>${i === 0 ? ' <span class="tag">mais rápida</span>' : ''}
+      <b>${fmtDist(a.distance)} · ${fmtDur(a.duration)}</b>${a.pref ? ` <span class="tag">⭐ seu caminho de ${a.pref}</span>` : i === (S.alts[0]?.pref ? 1 : 0) ? ' <span class="tag">mais rápida</span>' : ''}
       <div class="hint">via ${esc(a.summary || '—')}</div>
     </div>`).join('') +
     (S.alts.length > 1 ? '<p class="hint">Toque para escolher. Quer outro caminho? Use “passar obrigatoriamente por”.</p>' : '');
@@ -833,6 +927,8 @@ $('#btnGo').onclick = async () => {
   let trip;
   if (S.alts.length) {
     trip = tripFromAlt(S.alts[S.altIdx]);
+    // Escolheu uma opção que não é a primeira? Vira o seu caminho deste horário.
+    if (S.altIdx > 0 && S.points.length === 2) Places.saveRoutePref(S.points[0], S.points[1], trip.pts);
     await saveTrip(trip);
     clearAlts();
     S.trip = trip;
@@ -842,8 +938,8 @@ $('#btnGo').onclick = async () => {
   } else return;
   showRouteBar(null);
   await startDrive(trip, false);
-  if (trip.poisOk) return;
-  fetchRouteDataLive(trip);
+  // Primeiro radares/postos (mais importantes); depois o mapa do caminho.
+  (trip.poisOk ? Promise.resolve() : fetchRouteDataLive(trip)).finally(() => prefetchRouteMap(trip));
 };
 
 // Baixa radares/postos/limites da rota com a viagem já andando. Se o servidor
@@ -898,6 +994,7 @@ $('#btnPrepare').onclick = async () => {
     toast('⚠ Não consegui baixar postos/radares agora (' + e.message + '). A rota foi salva; tente “Atualizar dados” depois.', 10000);
   }
   await saveTrip(trip);
+  prefetchRouteMap(trip); // mapa do caminho para usar sem sinal
   S.trip = trip;
   clearAlts();
   bar.hidden = true;
@@ -1169,6 +1266,12 @@ document.addEventListener('visibilitychange', () => {
 
 function stopDrive() {
   S.companion = null;
+  // Chegou: o caminho que você DIRIGIU (ex.: pela avenida da praia) fica
+  // guardado como o seu de dia/noite para esta origem e destino.
+  const tp = S.nav?.trip?.places;
+  if (S.nav?.arrived && tp?.length === 2 && S.rec?.d.track.length > 8 && !S.simulating) {
+    Places.saveRoutePref(tp[0], tp[1], S.rec.d.track);
+  }
   if (S.rec) {
     S.rec.finish().then((kept) => { if (kept) toast('📍 Viagem salva no histórico (aba Lugares).', 3500); });
     S.rec = null;
@@ -2844,6 +2947,7 @@ async function init() {
   }
   showPersonalizeTip();
   setSearchKey(S.settings.tomtomKey || CONFIG.tomtomKey);
+  useTileKey(S.settings.tomtomKey || CONFIG.tomtomKey);
   Voice.configure(S.settings);
   applyName();
   greet();

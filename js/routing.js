@@ -214,7 +214,9 @@ export async function roadDistances(from, places, ms = 7000) {
   return places.map((p) => roadCache.get(k(from) + '>' + k(p)) || null);
 }
 
-export async function route(points, { foot = false } = {}) {
+// silentVias: pontos do meio só "puxam" o caminho (caminho preferido), sem
+// "você chegou" no meio da viagem.
+export async function route(points, { foot = false, silentVias = false } = {}) {
   const coords = points.map((p) => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
   const alt = points.length === 2 ? 'true' : 'false';
   const qs = `${coords}?overview=full&geometries=geojson&steps=true&alternatives=${alt}`;
@@ -231,17 +233,18 @@ export async function route(points, { foot = false } = {}) {
   if (!res.ok) throw new Error('Falha ao calcular rota (' + res.status + ')');
   const data = await res.json();
   if (data.code !== 'Ok') throw new Error('Rota não encontrada: ' + (data.message || data.code));
-  return data.routes.map((r) => buildRoute(r));
+  return data.routes.map((r) => buildRoute(r, silentVias));
 }
 
-function buildRoute(r) {
+function buildRoute(r, silentVias = false) {
   const raw = r.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
   const pts = simplify(raw, 4);
   const line = makeLine(pts);
   const steps = [];
   let hint = 0;
-  for (const leg of r.legs) {
+  r.legs.forEach((leg, li) => {
     for (const s of leg.steps) {
+      if (silentVias && ((s.maneuver.type === 'arrive' && li < r.legs.length - 1) || (s.maneuver.type === 'depart' && li > 0))) continue;
       const step = {
         type: s.maneuver.type,
         modifier: s.maneuver.modifier,
@@ -260,12 +263,12 @@ function buildRoute(r) {
       step.arrow = arrow(step);
       steps.push(step);
     }
-  }
+  });
   return {
     pts: pts.map((p) => [+p.lat.toFixed(6), +p.lon.toFixed(6)]),
     distance: r.distance,
     duration: r.duration,
-    summary: r.legs.map((l) => l.summary).filter(Boolean).join(' · '),
+    summary: [...new Set(r.legs.flatMap((l) => (l.summary || '').split(', ')).filter(Boolean))].join(' · '),
     legs: r.legs.map((l) => ({ distance: l.distance, duration: l.duration, summary: l.summary })),
     steps,
   };
