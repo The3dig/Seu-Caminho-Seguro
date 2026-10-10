@@ -621,7 +621,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v49';
+const APP_VERSION = 'v50';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1893,8 +1893,36 @@ $('#btnNo').onclick = () => answer(false);
 
 // ---------- marcar radar novo ----------
 let markTimer;
+// Segurar o + RADAR (meio segundo) marca direto a lombada (ou o que você
+// escolher em Ajustes), com um toque só: bom para quem está sozinho no carro.
+// A posição é a do momento em que o dedo encostou.
+let markHold = null, markHeld = false, markDownFix = null;
+$('#btnMark').addEventListener('pointerdown', () => {
+  markHeld = false;
+  markDownFix = S.lastFix;
+  clearTimeout(markHold);
+  markHold = setTimeout(async () => {
+    markHeld = true;
+    const f = markDownFix || S.lastFix;
+    if (!f) return toast('Aguardando sinal de GPS…');
+    const kind = S.settings.holdMark || 'lombada';
+    const h = Radars.HAZARDS[kind];
+    navigator.vibrate?.([40, 60, 40]);
+    const hz = await Radars.add({ lat: f.lat, lon: f.lon, heading: f.speed > 2 ? f.heading : null, source: 'meu', kind });
+    S.lastMarked = hz;
+    S.nav?.addRadar(hz);
+    drawRadars();
+    Voice.beep({ times: 2, freq: 520 });
+    Voice.speak(`${h.word} marcado.`);
+    toast(`${h.icon} ${h.word} marcado. Tocar e soltar = radar; segurar = ${h.name}.`, 3500);
+  }, 550);
+});
+for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $('#btnMark').addEventListener(ev, () => clearTimeout(markHold));
+$('#btnMark').addEventListener('contextmenu', (e) => e.preventDefault());
+
 $('#btnMark').onclick = async () => {
-  const f = S.lastFix;
+  if (markHeld) { markHeld = false; return; } // foi o "segurar" (já marcou a lombada)
+  const f = markDownFix || S.lastFix;
   if (!f) return toast('Aguardando sinal de GPS…');
   const r = await Radars.add({ lat: f.lat, lon: f.lon, heading: f.speed > 2 ? f.heading : null, source: 'meu' });
   S.lastMarked = r;
@@ -2094,6 +2122,7 @@ function renderSettings() {
   $('#sWalk').checked = s.walkTest;
   $('#sNight').value = s.nightMap;
   $('#sMapRotate').checked = s.mapRotate !== false;
+  $('#sHoldMark').value = s.holdMark || 'lombada';
   $('#sMascotFun').value = s.mascotFun || 'always';
   $('#sCompanion').checked = companionOn();
   $('#sRecord').checked = s.recordDrives;
@@ -2136,6 +2165,7 @@ $('#btnSaveSettings').onclick = async () => {
   s.walkTest = $('#sWalk').checked;
   s.nightMap = $('#sNight').value;
   s.mapRotate = $('#sMapRotate').checked;
+  s.holdMark = $('#sHoldMark').value;
   s.mascotFun = $('#sMascotFun').value;
   s.companion = $('#sCompanion').checked;
   s.recordDrives = $('#sRecord').checked;

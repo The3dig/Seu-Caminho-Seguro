@@ -184,7 +184,7 @@
     <div class="confirm" id="markBox" hidden>
       <p>📷 Radar marcado! Qual o limite?</p>
       <div class="chips" id="limitChips"></div>
-      <p class="sub" style="margin-top:10px">Não era radar? É um:</p>
+      <p class="sub" style="margin-top:10px">Não era radar? É um: <small>(dica: <b>segurar</b> o + RADAR já marca lombada)</small></p>
       <div class="chips" id="hazChips">
         <button class="btn" data-k="buraco">🕳️ Buraco</button>
         <button class="btn" data-k="lombada">🚧 Lombada</button>
@@ -424,6 +424,12 @@
     </select>
     <label class="check"><input type="checkbox" id="sCompanion"> 🗣️ Kravenox companheiro: fala de vez em quando na viagem (contra o tédio e o sono)</label>
     <p class="hint">Dica: durante a viagem, toque no seu ícone no mapa para trocar sem sair da navegação.</p>
+    <label>Segurar o botão + RADAR marca direto</label>
+    <select id="sHoldMark">
+      <option value="lombada">🚧 Lombada</option>
+      <option value="buraco">🕳️ Buraco</option>
+      <option value="perigo">⚠️ Perigo</option>
+    </select>
     <label class="check"><input type="checkbox" id="sMapRotate"> 🧭 Mapa gira com você (direção da viagem sempre para cima)</label>
     <label>Mapa escuro (noite)</label>
     <select id="sNight">

@@ -474,3 +474,4 @@ body.rot #map { inset: auto; left: 50%; top: 50%; width: var(--rd); height: var(
   transform: rotate(var(--rot, 0deg)); transition: transform .6s ease-out; }
 body.rot .leaflet-marker-icon .mk, body.rot .upright { transform: rotate(var(--hd, 0deg)); transition: transform .6s ease-out; }
 .krav.upright { transform-origin: 40px 70px; }
+#btnMark { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
