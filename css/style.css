@@ -468,3 +468,9 @@ body.picking #map { bottom: 0; }
 .k-body.k-gone { opacity: 0; transition: opacity .3s; }
 .krav:has(.k-gone) .k-shadow { opacity: 0; }
 .chips.pay .btn.sel { background: var(--accent); color: #002233; font-weight: 800; }
+
+/* Mapa girando com você: o mapa (maior que a tela) gira; ícones ficam de pé */
+body.rot #map { inset: auto; left: 50%; top: 50%; width: var(--rd); height: var(--rd); margin: calc(var(--rd) / -2) 0 0 calc(var(--rd) / -2);
+  transform: rotate(var(--rot, 0deg)); transition: transform .6s ease-out; }
+body.rot .leaflet-marker-icon .mk, body.rot .upright { transform: rotate(var(--hd, 0deg)); transition: transform .6s ease-out; }
+.krav.upright { transform-origin: 40px 70px; }

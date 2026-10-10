@@ -135,7 +135,7 @@ const layers = {
   rejoin: L.layerGroup().addTo(map),
   me: L.layerGroup().addTo(map),
 };
-map.on('dragstart', () => { if (S.nav) S.follow = false; });
+map.on('dragstart', () => { if (S.nav) { S.follow = false; setMapRotation(false); } });
 
 // Tocar e segurar no mapa (fora da navegação): ir para cá, salvar lugar ou marcar radar.
 let menuPoint = null;
@@ -282,7 +282,8 @@ function drawTrip(trip, fit = true) {
   layers.pois.clearLayers();
   if (!trip) return;
   const line = L.polyline(trip.pts, { color: '#33c3ff', weight: 7, opacity: .9 }).addTo(layers.route);
-  L.polyline(trip.pts, { color: '#003b52', weight: 11, opacity: .5 }).addTo(layers.route).bringToBack();
+  const casing = L.polyline(trip.pts, { color: '#003b52', weight: 11, opacity: .5 }).addTo(layers.route).bringToBack();
+  S.routeDraw = { pts: trip.pts, lines: [line, casing], at: -1 }; // para ir apagando o trecho já feito
   const s = trip.pts[0], e = trip.pts[trip.pts.length - 1];
   L.marker(s, { icon: icon('🟢') }).addTo(layers.route);
   L.marker(e, { icon: icon('🏁') }).addTo(layers.route);
@@ -620,7 +621,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v47';
+const APP_VERSION = 'v48';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1292,6 +1293,7 @@ document.addEventListener('visibilitychange', () => {
 
 function stopDrive() {
   S.companion = null;
+  setMapRotation(false);
   // Chegou: o caminho que você DIRIGIU (ex.: pela avenida da praia) fica
   // guardado como o seu de dia/noite para esta origem e destino.
   const tp = S.nav?.trip?.places;
@@ -1416,8 +1418,51 @@ $('#btnStop').onclick = () => {
     if (Date.now() - stopArmed >= 8000) { b.classList.remove('armed'); b.textContent = '⏹ Encerrar'; }
   }, 8100);
 };
-$('#btnRecenter').onclick = () => { S.follow = true; if (S.lastFix) map.setView([S.lastFix.lat, S.lastFix.lon], 16); };
+$('#btnRecenter').onclick = () => {
+  S.follow = true;
+  if (S.lastFix) { map.setView([S.lastFix.lat, S.lastFix.lon], 16); setMapRotation(!!S.nav, S.lastHeading); }
+  toast(S.settings.mapRotate !== false ? '🧭 Seguindo você, com a direção sempre para cima.' : '🎯 Seguindo você (norte para cima).', 2000);
+};
 $('#btnDriveMusic').onclick = () => trilhaToggle();
+
+// ---------- Linha da rota vai sumindo atrás de você ----------
+function trimRoute(st) {
+  const rd = S.routeDraw, nav = S.nav;
+  if (!rd || !nav?.line || !nav.trip || rd.pts !== nav.trip.pts) return;
+  const p = st.progress ?? nav.progress;
+  if (Math.abs(p - rd.at) < 25) return; // só redesenha a cada ~25 m
+  rd.at = p;
+  const cum = nav.line.cum;
+  let lo = 0, hi = cum.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (cum[mid] <= p) lo = mid; else hi = mid; }
+  const here = pointAt(nav.line, p);
+  const rest = [[here.lat, here.lon], ...rd.pts.slice(lo + 1)];
+  for (const l of rd.lines) l.setLatLngs(rest);
+}
+
+// ---------- Mapa girando com você (direção da viagem sempre para cima) ----------
+// O #map fica maior que a tela (diagonal) e gira; os ícones "upright" giram de
+// volta para ficar de pé. Arrastar o mapa volta para o norte para cima; 🎯 retoma.
+let rotOn = false, rotAngle = 0;
+const rootStyle = document.documentElement.style;
+function setMapRotation(want, heading) {
+  want = want && S.settings.mapRotate !== false;
+  if (want !== rotOn) {
+    rotOn = want;
+    rootStyle.setProperty('--rd', `${Math.ceil(Math.hypot(innerWidth, innerHeight)) + 4}px`);
+    document.body.classList.toggle('rot', want);
+    if (!want) { rotAngle = 0; rootStyle.setProperty('--rot', '0deg'); rootStyle.setProperty('--hd', '0deg'); }
+    map.invalidateSize({ animate: false });
+  }
+  if (want && heading != null) {
+    const delta = ((-heading - rotAngle) % 360 + 540) % 360 - 180; // menor giro (359° → 1°)
+    if (Math.abs(delta) < 2) return;
+    rotAngle += delta;
+    rootStyle.setProperty('--rot', `${rotAngle}deg`);
+    rootStyle.setProperty('--hd', `${-rotAngle}deg`);
+  }
+}
+addEventListener('resize', () => { if (rotOn) { rootStyle.setProperty('--rd', `${Math.ceil(Math.hypot(innerWidth, innerHeight)) + 4}px`); map.invalidateSize({ animate: false }); } });
 
 let meMarker = null;
 // Ícone do carro: seta grande (padrão), emoji ou uma imagem sua.
@@ -1427,10 +1472,10 @@ kv.get('carImage').then((v) => { carImage = v || null; });
 function carIcon(heading) {
   const choice = S.settings.carIcon || 'arrow';
   if (choice === 'custom' && carImage) {
-    return L.divIcon({ html: `<div class="car-ico"><img src="${carImage}" alt=""></div>`, className: '', iconSize: [62, 62], iconAnchor: [31, 31] });
+    return L.divIcon({ html: `<div class="car-ico upright"><img src="${carImage}" alt=""></div>`, className: '', iconSize: [62, 62], iconAnchor: [31, 31] });
   }
   if (choice !== 'arrow' && choice !== 'custom') {
-    return L.divIcon({ html: `<div class="car-ico emoji">${choice}</div>`, className: '', iconSize: [44, 44], iconAnchor: [22, 22] });
+    return L.divIcon({ html: `<div class="car-ico emoji upright">${choice}</div>`, className: '', iconSize: [44, 44], iconAnchor: [22, 22] });
   }
   const html = heading != null ? `<div class="me-arrow big" style="transform:rotate(${heading}deg)"></div>` : '<div class="me" style="width:30px;height:30px"></div>';
   return L.divIcon({ html, className: '', iconSize: [32, 40], iconAnchor: [16, 20] });
@@ -1526,9 +1571,22 @@ function render(st) {
   if (krav) {
     // Brincadeiras nunca por cima de avisos: radar, limite, fora da rota ou manobra perto.
     const quiet = !!(st.radar || st.overRoad || st.limitDrop || st.off || (st.stepDist != null && st.stepDist < 400 && st.kmh > 3));
-    mascot.update({ kmh: st.kmh, heading: f.heading, arrived: !!st.arrived, quiet, mode: S.settings.mascotFun || 'always' });
+    mascot.update({ kmh: st.kmh, heading: rotOn ? 0 : f.heading, arrived: !!st.arrived, quiet, mode: S.settings.mascotFun || 'always' });
   }
-  if (S.follow) map.setView([f.lat, f.lon], S.nav?.walk ? 17 : st.kmh > 80 ? 15 : 16, { animate: false });
+  if (f.heading != null && st.kmh > 3) S.lastHeading = f.heading;
+  setMapRotation(!!S.nav && S.follow, S.lastHeading);
+  if (S.follow) {
+    const z = S.nav?.walk ? 17 : st.kmh > 80 ? 15 : 16;
+    let c = [f.lat, f.lon];
+    // Mapa girando: o carro fica mais embaixo, para ver mais da estrada à frente.
+    if (rotOn && S.lastHeading != null) {
+      const m = innerHeight * 0.22 * (156543.03 * Math.cos((f.lat * Math.PI) / 180)) / 2 ** z;
+      const h = (S.lastHeading * Math.PI) / 180;
+      c = [f.lat + (m * Math.cos(h)) / 111320, f.lon + (m * Math.sin(h)) / (111320 * Math.cos((f.lat * Math.PI) / 180))];
+    }
+    map.setView(c, z, { animate: false });
+  }
+  trimRoute(st);
 
   // radar
   const ra = $('#radarAlert');
@@ -2034,6 +2092,7 @@ function renderSettings() {
   $('#sIntroMusic').checked = s.introMusic;
   $('#sWalk').checked = s.walkTest;
   $('#sNight').value = s.nightMap;
+  $('#sMapRotate').checked = s.mapRotate !== false;
   $('#sMascotFun').value = s.mascotFun || 'always';
   $('#sCompanion').checked = companionOn();
   $('#sRecord').checked = s.recordDrives;
@@ -2075,6 +2134,7 @@ $('#btnSaveSettings').onclick = async () => {
   s.introMusic = $('#sIntroMusic').checked;
   s.walkTest = $('#sWalk').checked;
   s.nightMap = $('#sNight').value;
+  s.mapRotate = $('#sMapRotate').checked;
   s.mascotFun = $('#sMascotFun').value;
   s.companion = $('#sCompanion').checked;
   s.recordDrives = $('#sRecord').checked;

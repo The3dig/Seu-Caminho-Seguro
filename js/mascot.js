@@ -24,7 +24,7 @@ export class Mascot {
   constructor() {
     for (const n of NAMES) { const im = new Image(); im.src = BASE + n + '.png'; } // pré-carrega
     const el = document.createElement('div');
-    el.className = 'krav';
+    el.className = 'krav upright'; // upright: fica de pé quando o mapa gira
     el.innerHTML = '<div class="k-fx"></div><div class="k-shadow"></div><div class="k-body"><img alt="" draggable="false"></div><div class="k-say" hidden></div>';
     this.el = el;
     this.body = el.querySelector('.k-body');
