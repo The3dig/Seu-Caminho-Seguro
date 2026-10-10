@@ -620,7 +620,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v42';
+const APP_VERSION = 'v43';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1165,6 +1165,12 @@ async function startDrive(trip, simulate, resume = null) {
   Voice.speak(trip ? departureSpeech(trip, nR) : `Modo alerta de radar ativado. ${safetyReminder()} Boa viagem!`, { force: true });
   const night = new Date().getHours() >= 18 || new Date().getHours() < 6;
   toast(`🔒 Coloque o cinto  ·  💡 ${night ? 'Acenda os faróis' : 'Farol baixo na estrada'}`, 6000);
+  requestAnimationFrame(placeSideButtons);
+  if (!S.settings.sideHintSeen) {
+    S.settings.sideHintSeen = true;
+    saveSettings(S.settings);
+    setTimeout(() => S.nav && toast('💡 Dica: segure um botão da lateral e arraste para onde quiser.', 6000), 14000);
+  }
 }
 
 // "Saindo agora para Casa. São 6 quilômetros, chegada prevista às 18 e 45…"
@@ -1304,6 +1310,72 @@ function stopDrive() {
 new ResizeObserver(([e]) => {
   $('#v-drive').style.setProperty('--db-h', `${Math.round(e.target.offsetHeight)}px`);
 }).observe($('#v-drive .drive-bottom'));
+// ---------- Botões da lateral móveis ----------
+// Segure um botão (meio segundo) e arraste para onde quiser; o lugar fica
+// guardado (em proporção da tela, para valer em pé e deitado). Toque normal
+// continua funcionando.
+const SIDE_IDS = ['btnRecenter', 'btnDriveMusic', 'btnPause', 'btnStop'];
+let sideDragged = false; // engole o "clique" que vem logo depois de arrastar
+function placeSideButtons() {
+  const pos = S.settings.sidePos || {};
+  for (const id of SIDE_IDS) {
+    const b = $('#' + id);
+    const p = pos[id];
+    if (!p) { b.classList.remove('moved'); b.style.left = b.style.top = ''; continue; }
+    b.classList.add('moved');
+    const w = b.offsetWidth || 56, h = b.offsetHeight || 56;
+    b.style.left = `${Math.min(innerWidth - w - 4, Math.max(4, p.x * innerWidth - w / 2))}px`;
+    b.style.top = `${Math.min(innerHeight - h - 4, Math.max(4, p.y * innerHeight - h / 2))}px`;
+  }
+}
+for (const id of SIDE_IDS) {
+  const b = $('#' + id);
+  let timer = null, dragging = false, sx = 0, sy = 0;
+  b.addEventListener('pointerdown', (e) => {
+    sx = e.clientX; sy = e.clientY; dragging = false;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      dragging = true;
+      b.classList.add('dragging');
+      navigator.vibrate?.(25);
+      try { b.setPointerCapture(e.pointerId); } catch { /* ok */ }
+    }, 450);
+  });
+  b.addEventListener('pointermove', (e) => {
+    if (!dragging) {
+      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 12) clearTimeout(timer); // é rolagem/toque, não arrasto
+      return;
+    }
+    e.preventDefault();
+    b.classList.add('moved');
+    b.style.left = `${Math.min(innerWidth - b.offsetWidth - 4, Math.max(4, e.clientX - b.offsetWidth / 2))}px`;
+    b.style.top = `${Math.min(innerHeight - b.offsetHeight - 4, Math.max(4, e.clientY - b.offsetHeight / 2))}px`;
+  });
+  const end = async (e) => {
+    clearTimeout(timer);
+    if (!dragging) return;
+    dragging = false;
+    sideDragged = true;
+    setTimeout(() => { sideDragged = false; }, 400);
+    b.classList.remove('dragging');
+    const r = b.getBoundingClientRect();
+    S.settings.sidePos = { ...(S.settings.sidePos || {}), [id]: { x: (r.left + r.width / 2) / innerWidth, y: (r.top + r.height / 2) / innerHeight } };
+    await saveSettings(S.settings);
+  };
+  b.addEventListener('pointerup', end);
+  b.addEventListener('pointercancel', end);
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+  // Depois de arrastar, não dispara a ação do botão.
+  b.addEventListener('click', (e) => { if (sideDragged) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+}
+addEventListener('resize', placeSideButtons);
+$('#btnResetSide').onclick = async () => {
+  S.settings.sidePos = {};
+  await saveSettings(S.settings);
+  placeSideButtons();
+  toast('↺ Botões da viagem voltaram ao lugar padrão.', 2500);
+};
+
 // Encerrar: toque uma vez (o botão pede confirmação) e toque de novo.
 // Sem a janelinha do navegador, que no iPhone às vezes não aparece.
 let stopArmed = 0;

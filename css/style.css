@@ -425,3 +425,6 @@ body.picking #map { bottom: 0; }
 .offline-status { position: absolute; left: 14px; bottom: calc(8px + var(--safe-b)); margin: 0; font-size: 12px; opacity: .75; }
 .offline-status.ok { color: #7ee2a0; opacity: .95; }
 #pasteBox { width: 100%; margin-top: 8px; font-size: 12px; }
+.drive-side .btn { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.drive-side .btn.moved { position: fixed; z-index: 7; }
+.drive-side .btn.dragging { transform: scale(1.18); box-shadow: 0 0 0 3px var(--accent), 0 6px 18px #000c; opacity: .92; }
