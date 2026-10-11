@@ -675,7 +675,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v57';
+const APP_VERSION = 'v58';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -2373,7 +2373,8 @@ $('#tpBuild').onclick = async () => {
     const dest = await resolvePlace(toTxt, 'destino', '#tpGeo');
     status('🛣️ Calculando a rota…');
     const points = [from, ...stops, dest];
-    const sel = (await route(points, { foot: S.settings.walkTest }))[0];
+    // O roteiro é sempre de carro (dias ao volante, combustível, pedágios), mesmo com o modo a pé ligado.
+    const sel = (await route(points))[0];
     Places.addRecent(dest);
     const trip = {
       id: uid(),
@@ -2479,7 +2480,15 @@ function renderPlan(trip) {
     </div>
     ${days}`;
 
-  $('#tpStart').onclick = () => startDrive(trip, false);
+  $('#tpStart').onclick = async () => {
+    if (S.settings.walkTest) { // roteiro é de carro: sai do modo a pé
+      S.settings.walkTest = false;
+      await saveSettings(S.settings);
+      renderModeSeg();
+      toast('🚗 Roteiro de carro: o app voltou para o modo carro.', 4000);
+    }
+    startDrive(trip, false);
+  };
   $('#tpMap').onclick = () => { S.trip = trip; show('v-plan'); drawTrip(trip); renderSummary(trip); };
   $('#tpRecalc').onclick = async () => {
     const prefs = tpPrefs();
