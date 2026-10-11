@@ -674,7 +674,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v52';
+const APP_VERSION = 'v53';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1017,8 +1017,10 @@ $('#btnGo').onclick = async () => {
 // do mapa demorar ou falhar, tenta de novo sozinho (1, 2 e 4 min depois).
 async function fetchRouteDataLive(trip, attempt = 0) {
   if (S.nav?.trip !== trip) return;
+  trip.poisLoading = true;
   try {
     const added = await downloadRouteData(trip);
+    trip.poisLoading = false;
     if (S.nav?.trip !== trip) return;
     // Atualiza a navegação em andamento com o que chegou.
     S.nav.pois = trip.pois;
@@ -1042,6 +1044,7 @@ async function fetchRouteDataLive(trip, attempt = 0) {
     if (nR !== S.departRadars) Voice.speak(nR ? `Agora são ${nR === 1 ? 'um radar' : `${nR} radares`} no caminho.` : 'Nenhum radar conhecido no caminho.', { force: true });
   } catch {
     trip.poisOk = false;
+    trip.poisLoading = attempt < 3; // ainda vai tentar de novo?
     if (S.nav?.trip !== trip) return;
     const mine = S.nav.routeRadars?.length || 0;
     const base = mine ? `Seus ${mine === 1 ? '1 radar salvo está ativo' : `${mine} radares salvos estão ativos`}.` : 'Os radares que você marcar já funcionam.';
@@ -1685,7 +1688,8 @@ function render(st) {
     $('#backArrow').style.transform = `rotate(${rel}deg)`;
   }
   // Saiu da rota com internet: traça sozinho o caminho de volta (sem precisar tocar).
-  if (st.off && !S.rejoin && !S.rejoinTried && navigator.onLine && S.settings.autoRejoin !== false) {
+  // (a pé, perto da rota — até 150 m — basta a voz dizendo para que lado ir)
+  if (st.off && !S.rejoin && !S.rejoinTried && navigator.onLine && S.settings.autoRejoin !== false && !(S.settings.walkTest && (st.offDist ?? 0) < 150)) {
     S.rejoinTried = true;
     setTimeout(() => { if (S.nav && S.nav.offRoute && !S.rejoin) rejoinRoute(); }, 2500);
   }
@@ -1725,7 +1729,8 @@ function render(st) {
     const gap = (nf[1]?.along ?? st.total) - nf[0].along;
     const far = gap > S.settings.fuelGapKm * 1000;
     cards.push(card('⛽ Próximo posto', nf[0], far ? `depois: só em ${fmtDist(gap)}` : (nf[1] ? `seguinte: +${fmtDist(nf[1].d)}` : ''), far));
-  } else if (S.nav?.trip && !S.nav.trip.poisOk) cards.push('<div class="poi far"><div class="k">⛽ Próximo posto</div><div class="v">buscando…</div><div class="n">baixando postos do caminho</div></div>');
+  } else if (S.nav?.trip && !S.nav.trip.poisOk && S.nav.trip.poisLoading) cards.push('<div class="poi far"><div class="k">⛽ Próximo posto</div><div class="v">buscando…</div><div class="n">baixando postos do caminho</div></div>');
+  else if (S.nav?.trip && !S.nav.trip.poisOk) cards.push('<div class="poi far"><div class="k">⛽ Próximo posto</div><div class="v">sem dados</div><div class="n">o servidor do mapa não respondeu</div></div>');
   else cards.push(`<div class="poi far"><div class="k">⛽ Próximo posto</div><div class="v">nenhum</div><div class="n">${S.nav?.trip?.poisPartial ? 'sem dados neste trecho' : 'até o destino'}</div></div>`);
   if (st.next.food[0]) cards.push(card('🍽️ Comer', st.next.food[0]));
   const rest = [...st.next.rest, ...st.next.lodging].sort((a, b) => a.d - b.d)[0];
@@ -1768,9 +1773,11 @@ async function rejoinRoute() {
   btn.textContent = '🧭 Calculando o caminho de volta…';
   try {
     // Volta num ponto um pouco à frente, para não mandar fazer retorno.
+    // A pé: volta para o ponto mais perto da rota, por caminho de pedestre.
+    const walk = !!S.settings.walkTest;
     const loc = locate(nav.line, f);
-    const target = pointAt(nav.line, Math.min(nav.line.length, Math.max(loc?.along ?? 0, nav.progress) + 250));
-    const [r] = await route([{ lat: f.lat, lon: f.lon }, { lat: target.lat, lon: target.lon }]);
+    const target = pointAt(nav.line, Math.min(nav.line.length, Math.max(loc?.along ?? 0, nav.progress) + (walk ? 30 : 250)));
+    const [r] = await route([{ lat: f.lat, lon: f.lon }, { lat: target.lat, lon: target.lon }], { foot: walk });
     const line = makeLine(r.pts.map(([lat, lon]) => ({ lat, lon })));
     S.rejoin = { line, steps: r.steps.filter((x) => x.type !== 'depart' && x.type !== 'arrive'), spoken: new Map() };
     nav.rejoining = true; // a linha laranja guia; a voz de "a rota fica a X" se cala

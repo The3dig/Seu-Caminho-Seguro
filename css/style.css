@@ -494,3 +494,5 @@ body.driving.near-turn .car-ico.emoji { font-size: 22px; }
 body.driving.near-turn .car-ico img { width: 30px; height: 30px; }
 body.driving.near-turn .krav, body.driving.near-turn .car-ico { opacity: .75; }
 body.driving.near-turn .krav .k-say { display: none; }
+/* Avisos (fora da rota, radar, chegada) sempre por cima dos botões, mesmo arrastados para lá */
+.drive .offroute, .drive .radar-alert, .drive .arrive-card { z-index: 8; }
