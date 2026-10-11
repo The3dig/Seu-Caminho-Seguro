@@ -27,6 +27,13 @@ const LINES = [
   'A Sentinela sem Rosto também não piscava. Mas ela não estava dirigindo.',
   'Valdora ardeu em chamas e eu segui em frente. Nós vamos seguir também.',
 ];
+const WALK = [
+  'Andar a pé. Foi assim que eu atravessei o Reino Quebrado inteiro.',
+  'Passo a passo. A Essência volta devagar, mas volta.',
+  'Na Vila Sem Nome eu também andava sozinho. Mas hoje você tem companhia.',
+  'Beba água. Nem a Essência substitui um bom gole de água.',
+  'Cuidado ao atravessar. Os carros aqui são mais perigosos que as Sentinelas.',
+];
 const TIRED = [
   'Ei. Seus olhos estão pesados como cristal do Cisma? Se bater sono, a gente para.',
   'Até eu, que dormi séculos no Abismo, sei a hora de descansar. Que tal uma parada?',
@@ -43,7 +50,7 @@ const rand = (a, b) => a + Math.random() * (b - a);
 
 export class Companion {
   constructor() {
-    this.next = Date.now() + rand(6, 10) * 60000; // primeira fala depois de uns minutos
+    this.next = Date.now() + rand(2, 4) * 60000; // primeira fala logo no começo (para você saber que ele está lá)
     this.used = new Set();
   }
 
@@ -56,20 +63,21 @@ export class Companion {
   }
 
   // st = estado da navegação; ctx = { movingSec, night, fuelKm }
-  tick(st, { movingSec = 0, night = false, fuelKm = null } = {}) {
+  tick(st, { movingSec = 0, night = false, fuelKm = null, walk = false } = {}) {
     const now = Date.now();
     if (now < this.next) return null;
-    if (st.kmh < 15 || st.arrived) return null;
-    // Nada por cima de avisos: espera a próxima chance.
-    if (st.radar || st.off || st.limitDrop || st.overRoad || (st.stepDist != null && st.stepDist < 1500)) return null;
-    const tired = movingSec > 90 * 60 || (night && movingSec > 45 * 60);
+    if (st.kmh < (walk ? 2 : 10) || st.arrived) return null; // a pé também fala
+    // Nada por cima de avisos nem de manobra logo à frente: espera a próxima chance.
+    if (st.radar || st.off || st.limitDrop || st.overRoad || (st.stepDist != null && st.stepDist < (walk ? 60 : 350))) return null;
+    const tired = !walk && (movingSec > 90 * 60 || (night && movingSec > 45 * 60));
     let line;
     if (tired && Math.random() < 0.6) {
       line = this.pick(TIRED) + (fuelKm != null && fuelKm < 80 ? ` O próximo posto fica a ${Math.max(1, Math.round(fuelKm))} quilômetros.` : '');
-    } else if (night && Math.random() < 0.3) line = this.pick(NIGHT);
+    } else if (walk && Math.random() < 0.6) line = this.pick(WALK);
+    else if (night && Math.random() < 0.3) line = this.pick(NIGHT);
     else line = this.pick(LINES);
     speak(line);
-    const gap = tired ? 10 : night ? 15 : 22;
+    const gap = tired ? 10 : night ? 12 : 15;
     this.next = now + (gap + rand(0, 8)) * 60000;
     return line;
   }

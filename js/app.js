@@ -674,7 +674,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v54';
+const APP_VERSION = 'v55';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1244,7 +1244,7 @@ async function startDrive(trip, simulate, resume = null) {
   if (resume) return Voice.speak('Viagem retomada. A rota continua a mesma.');
   Voice.speak(trip ? departureSpeech(trip, nR) : `Modo alerta de radar ativado. ${safetyReminder()} Boa viagem!`, { force: true });
   const night = new Date().getHours() >= 18 || new Date().getHours() < 6;
-  toast(`🔒 Coloque o cinto  ·  💡 ${night ? 'Acenda os faróis' : 'Farol baixo na estrada'}`, 6000);
+  toast(S.settings.walkTest ? '🚶 Boa caminhada! Atenção ao atravessar.' : `🔒 Coloque o cinto  ·  💡 ${night ? 'Acenda os faróis' : 'Farol baixo na estrada'}`, 6000);
   requestAnimationFrame(placeSideButtons);
   if (!S.settings.sideHintSeen) {
     S.settings.sideHintSeen = true;
@@ -1265,12 +1265,13 @@ function departureSpeech(trip, nR) {
   // Curto: destino, distância, chegada, radares, cinto/faróis.
   const radars = nR ? ` ${nR === 1 ? 'Um radar' : `${nR} radares`} no caminho.` : '';
   const days = trip.plan?.days?.length > 1 ? ` ${trip.plan.days.length} dias de viagem.` : '';
-  return `Saindo para ${name}. ${dist}, chegada ${when}.${radars}${days} ${safetyReminder()} Boa viagem!`;
+  return `Saindo para ${name}. ${dist}, chegada ${when}.${radars}${days} ${safetyReminder()} ${S.settings.walkTest ? 'Boa caminhada!' : 'Boa viagem!'}`;
 }
 
 // Lembrete de segurança na saída: cinto sempre; faróis (lei do farol baixo em
 // rodovia) — à noite, "acenda os faróis"; de dia, "farol baixo na estrada".
 function safetyReminder(now = new Date()) {
+  if (S.settings.walkTest) return 'Cuidado ao atravessar.';
   const h = now.getHours();
   const night = h >= 18 || h < 6;
   return night ? 'Cinto e faróis.' : 'Cinto, e farol baixo na estrada.';
@@ -1646,7 +1647,7 @@ function render(st) {
   if (companionOn() && !S.simulating) {
     if (!S.companion) S.companion = new Companion();
     const h = new Date().getHours();
-    S.companion.tick(st, { movingSec: S.nav?.movingSec || 0, night: h >= 22 || h < 5, fuelKm: st.next?.fuel?.[0] ? st.next.fuel[0].d / 1000 : null });
+    S.companion.tick(st, { movingSec: S.nav?.movingSec || 0, night: h >= 22 || h < 5, fuelKm: st.next?.fuel?.[0] ? st.next.fuel[0].d / 1000 : null, walk: !!S.settings.walkTest });
   }
   if (krav) {
     // Brincadeiras nunca por cima de avisos: radar, limite, fora da rota ou manobra perto.
