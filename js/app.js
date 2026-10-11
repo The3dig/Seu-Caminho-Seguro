@@ -674,7 +674,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v51';
+const APP_VERSION = 'v52';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1348,6 +1348,8 @@ document.addEventListener('visibilitychange', () => {
 
 function stopDrive() {
   S.companion = null;
+  document.body.classList.remove('near-turn');
+  S.rejoinTried = false;
   $('#backTrip').hidden = true;
   setMapRotation(false);
   // Chegou: o caminho que você DIRIGIU (ex.: pela avenida da praia) fica
@@ -1561,7 +1563,18 @@ function refreshMeIcon() {
   if (krav && !mascot) mascot = new Mascot();
   meMarker.setIcon(krav ? mascot.icon : carIcon(null));
 }
+function paintQmSize() { for (const b of $('#qmSize').querySelectorAll('button')) b.classList.toggle('active', b.dataset.s === (S.settings.iconSize || 'm')); }
+for (const b of $('#qmSize').querySelectorAll('button')) {
+  b.onclick = async () => {
+    S.settings.iconSize = b.dataset.s;
+    await saveSettings(S.settings);
+    paintQmSize();
+    document.body.classList.toggle('icon-s', b.dataset.s === 's');
+    document.body.classList.toggle('icon-l', b.dataset.s === 'l');
+  };
+}
 function openIconMenu() {
+  paintQmSize();
   renderCarIcons('#qmIcons');
   $('#qmFun').value = S.settings.mascotFun || 'always';
   $('#qmComp').checked = companionOn();
@@ -1632,8 +1645,14 @@ function render(st) {
   if (f.heading != null && st.kmh > 3) S.lastHeading = f.heading;
   const inDrive = !$('#v-drive').hidden;
   setMapRotation(!!S.nav && S.follow && inDrive, S.lastHeading);
+  // Perto de uma entrada/curva (na cidade): ícone menor e mapa mais perto.
+  const nearTurn = st.stepDist != null && st.stepDist < 500 && !st.arrived;
+  document.body.classList.toggle('near-turn', nearTurn);
+  document.body.classList.toggle('icon-s', S.settings.iconSize === 's');
+  document.body.classList.toggle('icon-l', S.settings.iconSize === 'l');
   if (S.follow && inDrive) {
-    const z = S.nav?.walk ? 17 : st.kmh > 80 ? 15 : 16;
+    let z = S.nav?.walk ? 17 : st.kmh > 80 ? 15 : 16;
+    if (nearTurn && st.kmh < 75 && !S.nav?.walk) z = st.stepDist < 250 ? 18 : 17;
     let c = [f.lat, f.lon];
     // Mapa girando: o carro fica mais embaixo, para ver mais da estrada à frente.
     if (rotOn && S.lastHeading != null) {
@@ -1665,6 +1684,12 @@ function render(st) {
     const rel = st.backBearing != null ? st.backBearing - (f.heading ?? 0) : 0;
     $('#backArrow').style.transform = `rotate(${rel}deg)`;
   }
+  // Saiu da rota com internet: traça sozinho o caminho de volta (sem precisar tocar).
+  if (st.off && !S.rejoin && !S.rejoinTried && navigator.onLine && S.settings.autoRejoin !== false) {
+    S.rejoinTried = true;
+    setTimeout(() => { if (S.nav && S.nav.offRoute && !S.rejoin) rejoinRoute(); }, 2500);
+  }
+  if (!st.off) S.rejoinTried = false;
   updateRejoin(st, f);
   // manobra
   if (!$('#stepsPanel').hidden) renderSteps(st);
@@ -2181,6 +2206,8 @@ function renderSettings() {
   $('#sNight').value = s.nightMap;
   $('#sMapRotate').checked = s.mapRotate !== false;
   $('#sHoldMark').value = s.holdMark || 'lombada';
+  $('#sIconSize').value = s.iconSize || 'm';
+  $('#sAutoRejoin').checked = s.autoRejoin !== false;
   $('#sMascotFun').value = s.mascotFun || 'always';
   $('#sCompanion').checked = companionOn();
   $('#sRecord').checked = s.recordDrives;
@@ -2224,6 +2251,8 @@ $('#btnSaveSettings').onclick = async () => {
   s.nightMap = $('#sNight').value;
   s.mapRotate = $('#sMapRotate').checked;
   s.holdMark = $('#sHoldMark').value;
+  s.iconSize = $('#sIconSize').value;
+  s.autoRejoin = $('#sAutoRejoin').checked;
   s.mascotFun = $('#sMascotFun').value;
   s.companion = $('#sCompanion').checked;
   s.recordDrives = $('#sRecord').checked;

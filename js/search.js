@@ -216,8 +216,10 @@ function rankList(all, words, near, brand) {
   // Famoso só se o nome bate com tudo o que foi digitado.
   for (const r of out) if (r.fame && r.rank < 3) r.fame = 0;
   const far = (r) => r.km != null && r.km > 80;
+  // Já tem um famoso perto (ex.: chegando em Aparecida)? Os famosos longe descem.
+  const nearFame = out.some((r) => r.fame && r.km != null && r.km < 50);
   const tier = (r) => {
-    if (r.fame) return r.exact ? 11 : 10; // "Aparecida" (a cidade) antes de "Aparecida de Goiânia"
+    if (r.fame && (!nearFame || (r.km != null && r.km < 50))) return r.exact ? 11 : 10; // "Aparecida" (a cidade) antes de "Aparecida de Goiânia"
     let t = r.rank >= 2 ? 3 : r.rank;
     if (r.cls === 'street' && t === 3) t = 2; // "Rua Aparecida" abaixo dos lugares
     return t - (far(r) ? 4 : 0);
@@ -252,6 +254,9 @@ export async function suggestPlaces(text, near = null, onUpdate = () => {}) {
     const tt = await Promise.allSettled([
       tomtom(qtext, near, ttKey, { limit: 12 }).then(push),
       tomtom(qtext, near, ttKey, { global: true, limit: 5 }).then((l) => push(famous(l))),
+      // Importância (o mapa aberto sabe o que é famoso, ex.: o Santuário
+      // Nacional): marca como "famoso" o que bater com os resultados da TomTom.
+      photon(qtext, near, { global: true, limit: 6, ms: 6000 }).then((l) => push(famous(l))),
     ]);
     if (best.length && best.some((r) => r.rank > 0)) {
       sugCache.set(key, best);

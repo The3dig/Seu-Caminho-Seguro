@@ -479,3 +479,18 @@ body.rot .leaflet-marker-icon .mk, body.rot .upright { transform: rotate(var(--h
   background: var(--green, #2e7d32); color: #fff; border: 0; border-radius: 999px; padding: 12px 18px; font-size: 15px; box-shadow: 0 4px 14px #000a; white-space: nowrap; }
 .mode-seg { margin: 10px 0 0; }
 .mode-seg button.active { background: var(--accent); color: #002233; font-weight: 800; }
+
+/* Ícone menor dirigindo (não esconde a rua); ainda menor e meio transparente perto de uma entrada/curva */
+body.driving .krav .k-body img { height: 44px; }
+body.driving.icon-s .krav .k-body img { height: 32px; }
+body.driving.icon-l .krav .k-body img { height: 60px; }
+body.driving .car-ico.emoji { font-size: 30px; }
+body.driving.icon-s .car-ico.emoji { font-size: 24px; }
+body.driving.icon-l .car-ico.emoji { font-size: 38px; }
+body.driving .car-ico img { width: 42px; height: 42px; }
+body.driving.icon-s .car-ico img { width: 32px; height: 32px; }
+body.driving.near-turn .krav .k-body img { height: 30px; }
+body.driving.near-turn .car-ico.emoji { font-size: 22px; }
+body.driving.near-turn .car-ico img { width: 30px; height: 30px; }
+body.driving.near-turn .krav, body.driving.near-turn .car-ico { opacity: .75; }
+body.driving.near-turn .krav .k-say { display: none; }

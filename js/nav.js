@@ -180,7 +180,7 @@ export class Nav {
       this.offSpokenAt = Date.now();
       this.offSpokenD = loc?.offset;
     }
-    if (!this.offRoute && wasOff) speak('Você voltou para a rota planejada.');
+    if (!this.offRoute && wasOff && !this.arrived) speak('Você voltou para a rota planejada.');
     state.off = this.offRoute;
     state.offDist = loc?.offset;
     if (this.offRoute) {

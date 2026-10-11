@@ -427,6 +427,14 @@
     </select>
     <label class="check"><input type="checkbox" id="sCompanion"> 🗣️ Kravenox companheiro: fala de vez em quando na viagem (contra o tédio e o sono)</label>
     <p class="hint">Dica: durante a viagem, toque no seu ícone no mapa para trocar sem sair da navegação.</p>
+    <label>Tamanho do seu ícone na viagem</label>
+    <select id="sIconSize">
+      <option value="s">Pequeno</option>
+      <option value="m">Médio</option>
+      <option value="l">Grande</option>
+    </select>
+    <p class="hint">Perto de uma entrada ou curva ele fica menor e meio transparente, e o mapa aproxima.</p>
+    <label class="check"><input type="checkbox" id="sAutoRejoin"> 🧭 Saiu da rota? Traçar sozinho o caminho de volta (com internet)</label>
     <label>Segurar o botão + RADAR marca direto</label>
     <select id="sHoldMark">
       <option value="lombada">🚧 Lombada</option>
@@ -573,6 +581,8 @@
         <option value="stopped">Só quando estiver parado</option>
         <option value="off">Desligadas (só anda)</option>
       </select>
+      <label>Tamanho</label>
+      <div class="seg" id="qmSize"><button data-s="s">Pequeno</button><button data-s="m">Médio</button><button data-s="l">Grande</button></div>
       <label class="check"><input type="checkbox" id="qmComp"> 🗣️ Kravenox companheiro: fala de vez em quando na viagem (contra o tédio e o sono)</label>
       <button class="btn wide" id="qmMenu">⌂ Ir ao menu do app (a viagem continua)</button>
       <button class="btn primary wide" id="qmClose">Pronto</button>
