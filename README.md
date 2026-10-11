@@ -45,6 +45,7 @@ Funciona no navegador do celular e pode ser instalado na tela inicial (PWA). Dep
 | 🏠 **Lugares fixos** | Casa principal, Trabalho e quantos lugares quiser (Casa da praia, Casa da mãe…). Tocar e segurar num atalho edita/troca o endereço/apaga; alfinete ajustável para marcar a porta certa. Casa, Trabalho e favoritos com ícone: um toque no atalho e a rota já é traçada. Digitar “casa” no destino também funciona. |
 | 🕘 **Frequentes** | O app lembra os destinos usados e sugere os mais frequentes. |
 | 📍 **Histórico** | Cada viagem fica salva com o trajeto percorrido, km, tempo ao volante, velocidade máxima e radares passados (aba Lugares). |
+| 📊 **Resumo e semana** | No fim de cada viagem, um resumo: distância, tempo, média e máxima, radares, paradas, pedágios e combustível (carro) ou passos e calorias aproximadas (a pé), com botão de compartilhar. Na aba Lugares, **Esta semana**: km de carro e a pé, passos, tempo, pedágios e combustível, comparando com a semana passada. A pé, o horário de chegada segue o seu ritmo. |
 | ↩ **Volta** | Nas viagens salvas, um toque monta a rota de volta. |
 | ⏯ **Retomar** | Se o app fechar no meio da viagem, ao abrir ele oferece continuar de onde parou. |
 | 🌙 **Mapa noturno** | Mapa escuro automático das 18h às 6h. |

@@ -181,7 +181,7 @@ export class DriveRecorder {
     this.lastSave = Date.now();
     const d = this.d;
     await kv.set('drive:' + d.id, d);
-    const meta = { id: d.id, tripId: d.tripId, name: d.name, start: d.start, end: d.end, distance: d.distance, movingSec: d.movingSec, maxKmh: d.maxKmh, radars: d.radars, stops: (d.stops || []).length };
+    const meta = { id: d.id, tripId: d.tripId, name: d.name, start: d.start, end: d.end, distance: d.distance, movingSec: d.movingSec, maxKmh: d.maxKmh, radars: d.radars, stops: (d.stops || []).length, walk: !!d.walk, tollPaid: d.tollPaid || 0, fuelCost: d.fuelCost || 0 };
     const list = (await drives()).filter((x) => x.id !== d.id);
     list.unshift(meta);
     for (const old of list.splice(MAX_DRIVES)) await kv.del('drive:' + old.id);

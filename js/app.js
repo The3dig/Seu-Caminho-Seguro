@@ -674,7 +674,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v53';
+const APP_VERSION = 'v54';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1221,6 +1221,7 @@ async function startDrive(trip, simulate, resume = null) {
   if (!simulate && S.settings.recordDrives) {
     const existing = resume?.driveId ? await Places.loadDrive(resume.driveId) : null;
     S.rec = new Places.DriveRecorder({ tripId: trip?.id || null, name: trip ? trip.name : 'Só radar', existing });
+    if (!existing) S.rec.d.walk = !!S.settings.walkTest; // a pé ou de carro (para o relatório da semana)
     Places.active.set({ tripId: trip?.id || null, driveId: S.rec.id, name: trip ? trip.name : 'Só radar' });
   }
   S.follow = true;
@@ -1362,7 +1363,14 @@ function stopDrive() {
     Places.saveRoutePref(tp[0], tp[1], S.rec.d.track);
   }
   if (S.rec) {
-    S.rec.finish().then((kept) => { if (kept) toast('📍 Viagem salva no histórico (aba Lugares).', 3500); });
+    // Pedágios pelos quais passou e combustível estimado (carro), para o resumo.
+    const d = S.rec.d;
+    if (S.nav?.pois && !d.walk) {
+      const passed = tollPlazas(applyTollPrices(S.nav.pois)).filter((t) => t.along <= S.nav.progress + 50);
+      d.tollPaid = passed.reduce((a, t) => a + (t.price ?? tollAvg()), 0);
+    }
+    if (!d.walk) d.fuelCost = fuelCost(d.distance, carPrefs()).cost;
+    S.rec.finish().then((kept) => { if (kept) showTripReport(d); });
     S.rec = null;
   }
   Places.active.clear();
@@ -1712,6 +1720,10 @@ function render(st) {
     $('#turnText').textContent = 'Você chegou ao destino';
   }
   // chegada
+  // A pé: o horário de chegada segue o SEU ritmo (depois de uns minutos andando).
+  if (S.settings.walkTest && S.rec?.d.movingSec > 180 && S.rec.d.distance > 250) {
+    st.remainingSec = st.remaining / Math.max(0.4, S.rec.d.distance / S.rec.d.movingSec);
+  }
   $('#etaClock').textContent = fmtClock(new Date(Date.now() + st.remainingSec * 1000));
   const ta = tollsAhead(st);
   $('#etaRem').textContent = `${fmtDist(st.remaining)} · ${fmtDur(st.remainingSec)}${ta ? ` · 💰 ${ta.guess ? '~' : ''}${moneyBR(ta.total)}` : ''}`;
@@ -2613,6 +2625,63 @@ $('#to').addEventListener('input', updateRecentChips);
 $('#to').addEventListener('focus', updateRecentChips);
 $('#to').addEventListener('blur', () => setTimeout(updateRecentChips, 350));
 
+// ---------- Relatório da semana (a pé e de carro) ----------
+function weekStart(offsetWeeks = 0) {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - offsetWeeks * 7); // segunda-feira
+  return d.getTime();
+}
+function sumWeek(ds, from, to) {
+  const w = ds.filter((d) => d.start >= from && d.start < to);
+  const part = (list) => ({ n: list.length, km: list.reduce((a, d) => a + d.distance, 0) / 1000, sec: list.reduce((a, d) => a + d.movingSec, 0) });
+  return { car: part(w.filter((d) => !d.walk)), walk: part(w.filter((d) => d.walk)), toll: w.reduce((a, d) => a + (d.tollPaid || 0), 0), fuel: w.reduce((a, d) => a + (d.fuelCost || 0), 0) };
+}
+function renderWeek(ds) {
+  const now = sumWeek(ds, weekStart(0), Infinity);
+  const last = sumWeek(ds, weekStart(1), weekStart(0));
+  const km = (v) => (v < 10 ? v.toFixed(1).replace('.', ',') : Math.round(v).toLocaleString('pt-BR'));
+  const cmp = (a, b) => (b > 0 ? ` <small>(${a >= b ? '▲' : '▼'} sem. passada ${km(b)})</small>` : '');
+  const box = $('#weekReport');
+  if (!now.car.n && !now.walk.n) { box.innerHTML = '<p class="hint">Nesta semana ainda não tem viagens. O relatório aparece aqui.</p>'; return; }
+  box.innerHTML = `
+    ${now.car.n ? '' : '<!--'}<div class="week-row">🚗 <b>${km(now.car.km)} km</b> de carro · ${now.car.n} viage${now.car.n === 1 ? 'm' : 'ns'} · ${fmtDur(now.car.sec)}${cmp(now.car.km, last.car.km)}</div>${now.car.n ? '' : '-->'}
+    ${now.walk.n ? '' : '<!--'}<div class="week-row">🚶 <b>${km(now.walk.km)} km</b> a pé · ~${Math.round((now.walk.km * 1000) / 0.75).toLocaleString('pt-BR')} passos · ${fmtDur(now.walk.sec)}${cmp(now.walk.km, last.walk.km)}</div>${now.walk.n ? '' : '-->'}
+    ${now.toll || now.fuel ? `<div class="week-row">💰 pedágios ~${moneyBR(now.toll)} · ⛽ combustível ~${moneyBR(now.fuel)} · total ~${moneyBR(now.toll + now.fuel)}</div>` : ''}`;
+}
+
+// ---------- Resumo no fim da viagem ----------
+function showTripReport(d) {
+  const km = d.distance / 1000;
+  const avg = d.movingSec > 60 ? (d.distance / d.movingSec) * 3.6 : 0;
+  const rows = [
+    ['📏', `${km < 10 ? km.toFixed(1).replace('.', ',') : Math.round(km)} km`, d.walk ? 'caminhados' : 'rodados'],
+    ['⏱️', fmtDur(d.movingSec), 'em movimento'],
+    ['🚀', `${Math.round(avg)} km/h`, `média · máx ${Math.round(d.maxKmh)}`],
+  ];
+  if (d.walk) {
+    rows.push(['👣', `~${Math.round(d.distance / 0.75).toLocaleString('pt-BR')}`, 'passos']);
+    rows.push(['🔥', `~${Math.round(km * 60)} kcal`, 'gastas (aprox.)']);
+  } else {
+    if (d.tollPaid) rows.push(['💰', `~${moneyBR(d.tollPaid)}`, 'pedágios']);
+    if (d.fuelCost) rows.push(['⛽', `~${moneyBR(d.fuelCost)}`, 'combustível']);
+  }
+  if (d.radars) rows.push(['📷', String(d.radars), `radar${d.radars > 1 ? 'es' : ''} no caminho`]);
+  if (d.stops?.length) rows.push(['☕', String(d.stops.length), `parada${d.stops.length > 1 ? 's' : ''}`]);
+  $('#rpTitle').textContent = `${d.walk ? '🚶' : '🏁'} ${d.name}`;
+  $('#rpGrid').innerHTML = rows.map(([i, v, l]) => `<div><span>${i}</span><b>${v}</b><small>${l}</small></div>`).join('');
+  $('#rpKrav').textContent = (S.settings.carIcon || 'arrow') === 'kravenox'
+    ? (d.walk ? `🦖 Kravenox: ${km >= 5 ? 'Atravessou o Reino a pé, como eu. Respeito.' : 'Boa caminhada. A Essência agradece.'}` : '🦖 Kravenox: Chegamos. Tudo que foi tomado… inclusive a estrada.')
+    : '';
+  $('#reportModal').hidden = false;
+  $('#rpShare').onclick = async () => {
+    const text = `${$('#rpTitle').textContent}\n` + rows.map(([i, v, l]) => `${i} ${v} ${l}`).join('\n') + '\n— Seu Caminho Seguro';
+    try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('Resumo copiado.', 2500); } } catch { /* cancelou */ }
+  };
+}
+$('#rpClose').onclick = () => { $('#reportModal').hidden = true; };
+$('#reportModal').onclick = (e) => { if (e.target.id === 'reportModal') $('#reportModal').hidden = true; };
+
 async function renderPlaces() {
   const favs = await Places.favorites();
   const fl = $('#favList');
@@ -2654,6 +2723,7 @@ async function renderPlaces() {
   const km = ds.reduce((a, d) => a + d.distance, 0) / 1000;
   const hrs = ds.reduce((a, d) => a + d.movingSec, 0);
   $('#driveStats').innerHTML = `<div><b>${ds.length}</b><small>viagens</small></div><div><b>${Math.round(km).toLocaleString('pt-BR')}</b><small>km rodados</small></div><div><b>${fmtDur(hrs)}</b><small>ao volante</small></div>`;
+  renderWeek(ds);
   const dl = $('#driveList');
   dl.innerHTML = ds.length ? ds.map((d, i) => {
     const dt = new Date(d.start);

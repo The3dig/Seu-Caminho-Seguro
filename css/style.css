@@ -496,3 +496,8 @@ body.driving.near-turn .krav, body.driving.near-turn .car-ico { opacity: .75; }
 body.driving.near-turn .krav .k-say { display: none; }
 /* Avisos (fora da rota, radar, chegada) sempre por cima dos botões, mesmo arrastados para lá */
 .drive .offroute, .drive .radar-alert, .drive .arrive-card { z-index: 8; }
+.rp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+.rp-grid div { background: var(--panel); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; }
+.rp-grid span { font-size: 20px; } .rp-grid b { font-size: 20px; } .rp-grid small { opacity: .75; }
+.week { background: var(--panel); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+.week-row { padding: 4px 0; } .week-row small { opacity: .7; }
