@@ -112,6 +112,8 @@ async function overpass(query) {
   throw lastErr;
 }
 
+export const overpassQuery = (q) => overpass(q);
+
 function buildQuery(coordStr, radius) {
   const a = `(around:${radius},${coordStr})`;
   return `[out:json][timeout:60];

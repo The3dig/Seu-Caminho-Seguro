@@ -1,5 +1,5 @@
 // Service worker: deixa o app funcionando sem internet.
-const VERSION = 'v58';
+const VERSION = 'v59';
 const APP = 'app-' + VERSION;
 const TILES = 'tiles';
 const MAX_TILES = 20000; // inclui o mapa baixado ao longo das rotas
@@ -7,7 +7,7 @@ const MAX_TILES = 20000; // inclui o mapa baixado ao longo das rotas
 const SHELL = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
   'js/app.js', 'js/geo.js', 'js/store.js', 'js/routing.js', 'js/pois.js',
-  'js/radars.js', 'js/nav.js', 'js/voice.js', 'js/music.js', 'js/spotify.js', 'js/places.js', 'js/planner.js', 'js/config.js', 'js/cities.js', 'js/search.js', 'js/mascot.js', 'js/companion.js', 'js/share.js',
+  'js/radars.js', 'js/nav.js', 'js/voice.js', 'js/music.js', 'js/spotify.js', 'js/places.js', 'js/planner.js', 'js/config.js', 'js/cities.js', 'js/search.js', 'js/mascot.js', 'js/companion.js', 'js/share.js', 'js/guide.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   ...['k_portrait', 'k_down_0', 'k_down_1', 'k_up_0', 'k_up_1', 'k_left_0', 'k_left_1', 'k_right_0', 'k_right_1',
     'k_left_w0', 'k_left_w1', 'k_left_w2', 'k_left_w3', 'k_right_w0', 'k_right_w1', 'k_right_w2', 'k_right_w3'].map((n) => `icons/kravenox/${n}.png`),
@@ -62,7 +62,7 @@ self.addEventListener('fetch', (e) => {
   }
 
   // APIs de rota/busca: sempre online (dados ficam salvos no IndexedDB).
-  if (/nominatim|router\.project-osrm|routing\.openstreetmap|overpass|spotify|photon|tomtom|ntfy/.test(url.hostname)) return;
+  if (/nominatim|router\.project-osrm|routing\.openstreetmap|overpass|spotify|photon|tomtom|ntfy|wikipedia/.test(url.hostname)) return;
 
   // App: com internet pega sempre a versão mais nova (espera até 3 s);
   // sem internet ou sinal fraco, abre na hora pela cópia salva.

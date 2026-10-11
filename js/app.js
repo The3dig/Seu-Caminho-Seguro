@@ -15,6 +15,7 @@ import * as Cities from './cities.js';
 import { Mascot, PORTRAIT } from './mascot.js';
 import { Companion } from './companion.js';
 import { Share, newCode, cleanCode } from './share.js';
+import { sightsNear, typeInfo, hoursPt, closedOn } from './guide.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -675,7 +676,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v58';
+const APP_VERSION = 'v59';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -2411,6 +2412,7 @@ $('#tpBuild').onclick = async () => {
     renderSavedTrips();
     status('');
     renderPlan(trip);
+    loadGuide(trip); // "O que fazer no destino" (fica salvo para usar sem internet)
   } catch (e) {
     status('');
     if (e.message !== 'Busca cancelada.') toast('⚠ ' + e.message, 8000);
@@ -2429,7 +2431,12 @@ function renderPlan(trip) {
   const t = plan.totals;
   const gaps = fuelGaps(trip.pois || [], trip.distance).filter((g) => g.len > S.settings.fuelGapKm * 1000);
   const warns = [];
-  for (const d of plan.days) if (d.night) warns.push(`🌙 Dia ${d.n}: parte do trajeto cai de madrugada (22h–5h). Considere sair mais cedo ou dormir antes.`);
+  for (const d of plan.days) {
+    if (!d.night) continue;
+    const h = new Date(d.start.time).getHours();
+    if ((h >= 22 || h < 5) && !d.nightLate) warns.push(`🌙 Dia ${d.n}: saída às ${hm(d.start.time)}, ainda de madrugada. Durma bem antes, farol baixo e calma até clarear.`);
+    else warns.push(`🌙 Dia ${d.n}: parte do trajeto cai de madrugada (22h–5h). Considere sair mais cedo ou parar para dormir.`);
+  }
   for (const g of gaps) warns.push(`⛽ Trecho de ${fmtDist(g.len)} sem posto (${kmOf(g.from)} → ${kmOf(g.to)}). Abasteça antes.`);
   if (trip.poisOk === false) warns.push('Postos e restaurantes não foram baixados — as pausas ficaram sem sugestão de lugar.');
 
@@ -2478,7 +2485,9 @@ function renderPlan(trip) {
         <button class="btn" id="tpRecalc">🔄 Recalcular horários</button>
       </div>
     </div>
-    ${days}`;
+    ${days}
+    <div class="day guide" id="guideBox"></div>`;
+  renderGuide(trip);
 
   $('#tpStart').onclick = async () => {
     if (S.settings.walkTest) { // roteiro é de carro: sai do modo a pé
@@ -2500,6 +2509,62 @@ function renderPlan(trip) {
   for (const b of $('#tpResult').querySelectorAll('[data-hotels]')) b.onclick = () => showHotels(trip, +b.dataset.hotels);
   nameSuggestedCities(trip);
   $('#tpResult').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ---------- O que fazer no destino ----------
+function renderGuide(trip) {
+  const box = $('#guideBox');
+  if (!box) return;
+  const g = trip.guide;
+  const city = g?.city ? ` em ${esc(g.city)}` : ' no destino';
+  if (!g || g.loading) {
+    box.innerHTML = `<h4>🏛️ O que fazer${city}</h4>${g?.loading ? '<p class="hint">Procurando os pontos turísticos perto do destino…</p>' : '<button class="btn wide" id="guideLoad">🏛️ Ver o que fazer no destino</button>'}`;
+    const b = $('#guideLoad');
+    if (b) b.onclick = () => loadGuide(trip);
+    return;
+  }
+  if (g.error) {
+    box.innerHTML = `<h4>🏛️ O que fazer${city}</h4><p class="hint">${g.error}</p><button class="btn" id="guideLoad">🔄 Tentar de novo</button>`;
+    $('#guideLoad').onclick = () => loadGuide(trip);
+    return;
+  }
+  if (!g.items.length) { box.innerHTML = `<h4>🏛️ O que fazer${city}</h4><p class="hint">O mapa não tem pontos turísticos cadastrados perto do destino.</p>`; return; }
+  const total = Math.round((g.end - g.items[0].at) / 60000);
+  box.innerHTML = `<h4>🏛️ O que fazer${city}</h4>
+    <div class="sub">Roteiro a pé, na ordem do caminho · ~${fmtDur(total * 60)} visitando tudo</div>
+    <ul class="tl">${g.items.map((it, i) => {
+      const T = typeInfo(it.type);
+      const walk = it.walk < 60 ? (i ? 'ao lado' : 'é o destino') : `🚶 ${fmtDist(it.walk)} (~${Math.max(1, Math.round(it.walk / 75))} min)`;
+      return `<li><span class="t">${hm(it.at)}</span>${T.icon} <b>${esc(it.name)}</b>
+        <span class="sub">${T.label} · ~${it.min} min · ${walk}</span>
+        ${it.about ? `<span class="sub about">${esc(it.about)}</span>` : ''}
+        ${it.hours ? `<span class="sub">⏰ ${esc(hoursPt(it.hours))}${closedOn(it.hours, it.at) ? ' · <b class="closed">⚠ fechado neste dia</b>' : ''}</span>` : ''}
+        <span class="sub"><a href="${it.site ? esc(it.site) : mapsLink(it.lat, it.lon)}" target="_blank" rel="noopener">ver</a> · <a href="#" data-gsave="${i}">⭐ salvar em Lugares</a></span></li>`;
+    }).join('')}</ul>
+    <p class="hint">Horários de funcionamento mudam: confira antes de ir. Muitos museus fecham às segundas.</p>`;
+  for (const a of box.querySelectorAll('[data-gsave]')) a.onclick = async (e) => {
+    e.preventDefault();
+    const it = g.items[+a.dataset.gsave];
+    await Places.saveFavorite({ name: it.name, icon: typeInfo(it.type).icon, lat: it.lat, lon: it.lon, label: g.city || '' });
+    drawPlaces();
+    a.textContent = '✓ salvo';
+  };
+}
+
+async function loadGuide(trip) {
+  const dest = trip.places?.[trip.places.length - 1];
+  if (!dest) return;
+  const arrive = trip.plan?.days?.at(-1)?.end?.time || Date.now();
+  trip.guide = { loading: true, city: trip.guide?.city || '' };
+  renderGuide(trip);
+  try {
+    const [g, city] = await Promise.all([sightsNear(dest, new Date(arrive)), cityAt(dest.lat, dest.lon).catch(() => '')]);
+    trip.guide = { ...g, city: city || '' };
+  } catch {
+    trip.guide = { error: 'Não consegui buscar agora (sem internet ou servidor do mapa ocupado).', city: '' };
+  }
+  renderGuide(trip);
+  if (!trip.guide.error) saveTrip(trip);
 }
 
 // Descobre o nome da cidade dos pernoites sugeridos (uma consulta por vez).

@@ -236,6 +236,8 @@ body.night .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(
 .tl li.warnli::before { background: var(--red); }
 .tl .t { color: var(--accent); font-weight: 700; margin-right: 6px; }
 .tl .sub { display: block; }
+.tl .sub.about { font-style: italic; opacity: .85; margin: 2px 0; }
+.day.guide { margin-top: 12px; }
 .hotels { margin-top: 6px; }
 .hotels .list li { padding: 8px 10px; }
 .links { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
@@ -504,3 +506,4 @@ body.driving.near-turn .krav .k-say { display: none; }
 .friend-card { background: var(--panel); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
 .friend-mk { display: inline-flex; align-items: center; gap: 4px; background: #6a1b9a; color: #fff; border: 2px solid #fff; border-radius: 999px; padding: 2px 8px 2px 4px; font-size: 13px; white-space: nowrap; box-shadow: 0 2px 8px #0009; }
 .friend-mk span { font-size: 16px; }
+.tl .closed { color: var(--red); }

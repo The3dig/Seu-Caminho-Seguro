@@ -92,7 +92,11 @@ export function buildPlan(trip, stops, prefs, depart) {
     // Marca dirigida de madrugada (22h–5h).
     for (let t = 0; t < sec; t += 900) {
       const h = new Date(clock.getTime() + t * 1000).getHours();
-      if (h >= 22 || h < 5) nightWarn.add(day.n);
+      if (h >= 22 || h < 5) {
+        nightWarn.add(day.n);
+        // Só o começo do dia cai de madrugada (ex.: saiu às 4h) ou também o fim?
+        if (day.driveSec + t > 3 * 3600) day.nightLate = true;
+      }
     }
     clock = new Date(clock.getTime() + sec * 1000);
     day.driveSec += sec;
@@ -151,7 +155,8 @@ export function buildPlan(trip, stops, prefs, depart) {
       continue;
     }
 
-    // Pausa
+    // Pausa: se faltar menos de 40 min para chegar, segue direto.
+    if ((total - ev.at) / speed < 2400) { advance(total); break; }
     const meal = mealOf(new Date(clock.getTime() + ((ev.at - along) / speed) * 1000));
     const st = bestStop(pois, ev.at, { from: along, meal });
     if (st && st.poi.along > along + 5 * KM) {
