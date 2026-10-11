@@ -75,7 +75,7 @@ export class Companion {
       line = this.pick(TIRED) + (fuelKm != null && fuelKm < 80 ? ` O próximo posto fica a ${Math.max(1, Math.round(fuelKm))} quilômetros.` : '');
     } else if (walk && Math.random() < 0.6) line = this.pick(WALK);
     else if (night && Math.random() < 0.3) line = this.pick(NIGHT);
-    else line = this.pick(LINES);
+    else line = this.pick(walk ? LINES.filter((l) => !/carro|volante|caminhão|asfalto|rota|trânsito|radar|velocidade/i.test(l)) : LINES);
     speak(line);
     const gap = tired ? 10 : night ? 12 : 15;
     this.next = now + (gap + rand(0, 8)) * 60000;
