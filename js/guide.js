@@ -159,7 +159,17 @@ export async function typicalFood(city) {
     const page = Object.values((await res.json()).query?.pages || {})[0];
     if (!page || !norm(page.title).startsWith(norm(name))) return [];
     const sentences = (page.extract || '').replace(/\n+/g, ' ').split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/);
-    return sentences.filter((x) => FOOD_RX.test(x) && x.length < 400).slice(0, 2).map((x) => x.replace(/\s*\[\d+\]/g, '').trim());
+    // Frase que só cita a culinária de passagem (festa, evento) fica para o fim;
+    // frase que começa sem sujeito ("É a festa…") leva a anterior junto.
+    const party = /\b(festa|festival|evento|feira|exposi[cç][aã]o)\b/i;
+    const hits = [];
+    sentences.forEach((x, i) => {
+      if (!FOOD_RX.test(x) || x.length > 400) return;
+      const full = /^(É|Era|Foi|São|Tem|Possui|Inclui|Conta)(?=\s)/.test(x) && sentences[i - 1] ? `${sentences[i - 1]} ${x}` : x;
+      hits.push({ txt: full.replace(/\s*\[\d+\]/g, '').trim(), party: party.test(full) });
+    });
+    const good = hits.filter((h) => !h.party);
+    return (good.length ? good : hits.slice(0, 1).map((h) => ({ ...h, txt: '🎉 ' + h.txt }))).slice(0, 2).map((h) => h.txt);
   } catch { return []; }
 }
 
