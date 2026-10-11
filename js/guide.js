@@ -5,7 +5,7 @@ import { overpassQuery } from './pois.js';
 import { fetchT } from './routing.js';
 
 const TYPES = {
-  museum: { icon: '🏛️', label: 'Museu', min: 90, pts: 3 },
+  museum: { icon: '🏛️', label: 'Museu', min: 75, pts: 3 },
   palace: { icon: '🏰', label: 'Palácio', min: 60, pts: 3 },
   castle: { icon: '🏰', label: 'Castelo', min: 60, pts: 3 },
   gallery: { icon: '🖼️', label: 'Galeria', min: 45, pts: 2 },
@@ -35,6 +35,7 @@ function typeOf(t) {
 }
 
 const dist = (a, b) => Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180));
+const norm2 = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9]+/).filter((w) => !['museu', 'palacio', 'casa', 'igreja', 'catedral', 'parque'].includes(w));
 const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
 
 // Horário do OSM em português (Mo-Fr 09:00-17:00 → seg-sex 09:00-17:00).
@@ -89,35 +90,100 @@ out center tags 200;`);
     const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
     if (lat == null || !t.name) continue;
     const type = typeOf(t);
-    const score = TYPES[type].pts + (t.wikidata ? 4 : 0) + (t.wikipedia ? 3 : 0) + (t.tourism ? 1 : 0) + (t.opening_hours ? 1 : 0);
+    const score = TYPES[type].pts + (t.wikidata ? 4 : 0) + (t.wikipedia ? 4 : 0) + (t.tourism ? 1 : 0) + (t.opening_hours ? 1 : 0);
     const it = { name: t.name, type, lat, lon, score, hours: t.opening_hours || '', wiki: t.wikipedia || '', site: t.website || t['contact:website'] || '', d: dist(pt, { lat, lon }) };
     const k = norm(t.name);
     const prev = seen.get(k);
     if (!prev || prev.score < it.score) seen.set(k, it);
   }
-  // Os mais importantes (e não muito longe), depois em ordem de caminhada.
-  const top = [...seen.values()].filter((x) => x.score >= 3)
-    .sort((x, y) => y.score - x.score + (x.d - y.d) / 3000).slice(0, 8);
-  const route = [];
-  let cur = pt;
-  while (top.length) {
+  // Os mais importantes (e não muito longe). Tira repetidos do mesmo lugar
+  // (ex.: "Museu Imperial" e "Palácio Imperial", que ficam no mesmo prédio).
+  // Palavras que aparecem em muitos nomes (ex.: o nome da cidade) não contam.
+  const freq = new Map();
+  for (const x of seen.values()) for (const w of new Set(norm2(x.name))) freq.set(w, (freq.get(w) || 0) + 1);
+  const words = (n) => new Set(norm2(n).filter((w) => w.length >= 5 && freq.get(w) < 3));
+  const ranked = [...seen.values()].filter((x) => x.score >= 3).sort((x, y) => y.score - x.score + (x.d - y.d) / 3000);
+  const kept = [];
+  for (const it of ranked) {
+    const w = words(it.name);
+    if (kept.some((k) => dist(k, it) < 150 && [...words(k.name)].some((x) => w.has(x)))) continue;
+    kept.push(it);
+    if (kept.length >= 10) break;
+  }
+  // Escolhe pelos mais importantes até encher o dia (umas 18h, no máx. 6).
+  // Fechado no dia ou sem tempo: vai para "também vale" (outro dia).
+  const start = new Date(arrive).getTime() + 15 * 60000; // chega e estaciona
+  const cutoff = new Date(start); cutoff.setHours(18, 0, 0, 0);
+  const budget = Math.max(cutoff.getTime() - start, 60 * 60000);
+  const pick = [], more = [];
+  let used = 0;
+  for (const it of kept) { // já em ordem de importância
+    it.min = TYPES[it.type].min;
+    if (closedOn(it.hours, start)) { it.closed = true; more.push(it); continue; }
+    const need = (it.min + 8) * 60000; // visita + caminhada média
+    if (pick.length >= 6 || used + need > budget) { more.push(it); continue; }
+    pick.push(it); used += need;
+  }
+  // Ordem de caminhada (o mais perto de onde você está, um por vez) e horários.
+  const items = [];
+  let cur = pt, clock = start;
+  while (pick.length) {
     let bi = 0;
-    for (let i = 1; i < top.length; i++) if (dist(cur, top[i]) < dist(cur, top[bi])) bi = i;
-    const it = top.splice(bi, 1)[0];
+    for (let i = 1; i < pick.length; i++) if (dist(cur, pick[i]) < dist(cur, pick[bi])) bi = i;
+    const it = pick.splice(bi, 1)[0];
     it.walk = Math.round(dist(cur, it) * 1.3); // ruas não são retas
-    route.push(it);
+    it.at = clock + (it.walk / 1.25) * 1000; // ~4,5 km/h
+    clock = it.at + it.min * 60000;
+    items.push(it);
     cur = it;
   }
-  // Horário previsto: chega, estaciona (15 min) e vai visitando.
-  let clock = new Date(arrive).getTime() + 15 * 60000;
-  for (const it of route) {
-    clock += (it.walk / 1.25) * 1000; // ~4,5 km/h
-    it.at = clock;
-    it.min = TYPES[it.type].min;
-    clock += it.min * 60000;
-  }
-  await Promise.all(route.map(async (it) => { it.about = await wikiLine(it.wiki); }));
-  return { items: route, end: clock };
+  await Promise.all(items.map(async (it) => { it.about = await wikiLine(it.wiki); }));
+  return { items, more, end: clock };
 }
 
 export const typeInfo = (type) => TYPES[type] || TYPES.building;
+
+// ---------- Onde comer (opcional) ----------
+const UF = { AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará', DF: 'Distrito Federal', ES: 'Espírito Santo', GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba', PR: 'Paraná', PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte', RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina', SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins' };
+const FOOD_RX = /(culin[aá]ri|gastronom|pratos? (t[ií]pic|famos|tradicion)|comidas? t[ií]pic|iguaria|especialidades? (local|da cidade|culin|gastron)|famos[ao]s? (pel[ao]s?|por) (seu|sua|seus|suas)? ?(truta|queijo|doce|cerveja|chocolate|vinho|pastel|past[eé]is|caf[eé]|linguiça|pinh))/i;
+
+// Comida típica: frases da Wikipédia da cidade que falam de culinária.
+// city = "Petrópolis/RJ". Sem achar, devolve [] (o app diz que não achou).
+export async function typicalFood(city) {
+  const [name, uf] = String(city || '').split('/');
+  if (!name) return [];
+  const q = `${name} ${UF[uf] || ''} município`.trim();
+  try {
+    const res = await fetchT(`https://pt.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrlimit=1&gsrsearch=${encodeURIComponent(q)}&prop=extracts&explaintext=1&exlimit=1`, {}, 10000);
+    if (!res.ok) return [];
+    const page = Object.values((await res.json()).query?.pages || {})[0];
+    if (!page || !norm(page.title).startsWith(norm(name))) return [];
+    const sentences = (page.extract || '').replace(/\n+/g, ' ').split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/);
+    return sentences.filter((x) => FOOD_RX.test(x) && x.length < 400).slice(0, 2).map((x) => x.replace(/\s*\[\d+\]/g, '').trim());
+  } catch { return []; }
+}
+
+const CUISINE = { italian: '🍝 italiana', pizza: '🍕 pizzaria', japanese: '🍣 japonesa', sushi: '🍣 japonesa', brazilian: '🇧🇷 brasileira', regional: '🍲 regional', steak_house: '🥩 churrascaria', barbecue: '🥩 churrascaria', german: '🥨 alemã', portuguese: '🐟 portuguesa', french: '🥐 francesa', seafood: '🦐 frutos do mar', fish: '🐟 peixes', arab: '🧆 árabe', lebanese: '🧆 árabe', chinese: '🥢 chinesa', mexican: '🌮 mexicana', burger: '🍔 hambúrguer', coffee_shop: '☕ café', ice_cream: '🍦 sorvete', cake: '🍰 doces', vegetarian: '🥗 vegetariana', mineira: '🍲 mineira', trout: '🐟 truta' };
+const KIND = { restaurant: 'Restaurante', cafe: 'Café', bar: 'Bar', pub: 'Bar', biergarten: 'Cervejaria', ice_cream: 'Sorveteria' };
+export const cuisinePt = (c) => String(c || '').split(';').map((x) => CUISINE[x.trim()] || '').filter(Boolean).slice(0, 2).join(' · ');
+
+// Até 10 lugares para comer perto do destino, os mais "conhecidos" do mapa
+// primeiro (com página na Wikipédia, site, horário…). Redes ficam de fora.
+export async function foodNear(pt, radius = 2500) {
+  const a = `(around:${radius},${pt.lat},${pt.lon})`;
+  const els = await overpassQuery(`[out:json][timeout:40];
+nwr${a}["amenity"~"^(restaurant|cafe|bar|pub|biergarten|ice_cream)$"]["name"];
+out center tags 500;`);
+  const out = [];
+  for (const el of els) {
+    const t = el.tags || {};
+    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+    if (lat == null || t.brand || t['brand:wikidata']) continue; // redes (fast food)
+    const d = dist(pt, { lat, lon });
+    const score = (t.wikidata ? 5 : 0) + (t.wikipedia ? 3 : 0) + (t.tourism || t.historic ? 2 : 0) + (t.website || t['contact:website'] || t['contact:instagram'] ? 1 : 0)
+      + (t.opening_hours ? 1 : 0) + (t.cuisine ? 1 : 0) + (t.amenity === 'restaurant' ? 1 : 0) - d / 2000;
+    out.push({ name: t.name, lat, lon, d, score, kind: KIND[t.amenity] || 'Restaurante', cuisine: cuisinePt(t.cuisine), hours: t.opening_hours || '', site: t.website || t['contact:website'] || '' });
+  }
+  const seenN = new Set();
+  return out.sort((x, y) => y.score - x.score).filter((x) => { const k = norm(x.name); if (seenN.has(k)) return false; seenN.add(k); return true; }).slice(0, 10);
+}

@@ -15,7 +15,7 @@ import * as Cities from './cities.js';
 import { Mascot, PORTRAIT } from './mascot.js';
 import { Companion } from './companion.js';
 import { Share, newCode, cleanCode } from './share.js';
-import { sightsNear, typeInfo, hoursPt, closedOn } from './guide.js';
+import { sightsNear, typeInfo, hoursPt, closedOn, typicalFood, foodNear } from './guide.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -676,7 +676,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v59';
+const APP_VERSION = 'v60';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -2390,9 +2390,10 @@ $('#tpBuild').onclick = async () => {
     status('⛽ Baixando postos, restaurantes, hotéis, pedágios e radares do caminho…');
     try {
       const line = makeLine(sel.pts.map(([lat, lon]) => ({ lat, lon })));
-      const { pois, radars } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => status(`⛽ Baixando dados da estrada… ${Math.round(f * 100)}%`));
+      const { pois, radars, complete } = await fetchAlongRoute(line, S.settings.poiRadius, (f) => status(`⛽ Baixando dados da estrada… ${Math.round(f * 100)}%`));
       trip.pois = pois;
       trip.poisOk = true;
+      trip.poisPartial = !complete;
       await Radars.mergeOSM(radars);
       status('🚦 Baixando limites de velocidade das vias…');
       await loadLimits(trip, line, (f) => status(`🚦 Baixando limites de velocidade… ${Math.round(f * 100)}%`));
@@ -2437,7 +2438,8 @@ function renderPlan(trip) {
     if ((h >= 22 || h < 5) && !d.nightLate) warns.push(`🌙 Dia ${d.n}: saída às ${hm(d.start.time)}, ainda de madrugada. Durma bem antes, farol baixo e calma até clarear.`);
     else warns.push(`🌙 Dia ${d.n}: parte do trajeto cai de madrugada (22h–5h). Considere sair mais cedo ou parar para dormir.`);
   }
-  for (const g of gaps) warns.push(`⛽ Trecho de ${fmtDist(g.len)} sem posto (${kmOf(g.from)} → ${kmOf(g.to)}). Abasteça antes.`);
+  if (trip.poisPartial) warns.push('⚠ Parte dos postos e pedágios do caminho não baixou (servidor do mapa lento). Trechos “sem posto”, pausas e pedágios podem estar incompletos: toque em Montar roteiro de novo, de preferência no Wi-Fi.');
+  else for (const g of gaps) warns.push(`⛽ Trecho de ${fmtDist(g.len)} sem posto (${kmOf(g.from)} → ${kmOf(g.to)}). Abasteça antes.`);
   if (trip.poisOk === false) warns.push('Postos e restaurantes não foram baixados — as pausas ficaram sem sugestão de lugar.');
 
   const breakLi = (it) => {
@@ -2541,7 +2543,10 @@ function renderGuide(trip) {
         ${it.hours ? `<span class="sub">⏰ ${esc(hoursPt(it.hours))}${closedOn(it.hours, it.at) ? ' · <b class="closed">⚠ fechado neste dia</b>' : ''}</span>` : ''}
         <span class="sub"><a href="${it.site ? esc(it.site) : mapsLink(it.lat, it.lon)}" target="_blank" rel="noopener">ver</a> · <a href="#" data-gsave="${i}">⭐ salvar em Lugares</a></span></li>`;
     }).join('')}</ul>
-    <p class="hint">Horários de funcionamento mudam: confira antes de ir. Muitos museus fecham às segundas.</p>`;
+    ${g.more?.length ? `<p class="sub"><b>Também vale</b> (outro dia ou se sobrar tempo): ${g.more.map((it) => `<a href="${mapsLink(it.lat, it.lon)}" target="_blank" rel="noopener">${esc(it.name)}</a>${it.closed ? ' <span class="closed">(fechado neste dia)</span>' : ''}`).join(' · ')}</p>` : ''}
+    <p class="hint">Horários de funcionamento mudam: confira antes de ir. Muitos museus fecham às segundas.</p>
+    <div id="foodBox"></div>`;
+  renderFood(trip);
   for (const a of box.querySelectorAll('[data-gsave]')) a.onclick = async (e) => {
     e.preventDefault();
     const it = g.items[+a.dataset.gsave];
@@ -2549,6 +2554,53 @@ function renderGuide(trip) {
     drawPlaces();
     a.textContent = '✓ salvo';
   };
+}
+
+// Onde comer: opcional. Só busca se a pessoa pedir (ou se já pediu antes).
+function renderFood(trip) {
+  const box = $('#foodBox');
+  if (!box) return;
+  const f = trip.food, city = trip.guide?.city || '';
+  const cityName = city.split('/')[0];
+  if (!f || f.loading) {
+    box.innerHTML = `<h4>🍽️ Onde comer${cityName ? ' em ' + esc(cityName) : ''}</h4>${f?.loading ? '<p class="hint">Procurando a comida típica e os restaurantes…</p>' : '<button class="btn wide" id="foodLoad">🍽️ Ver comida típica e restaurantes</button>'}`;
+    const b = $('#foodLoad');
+    if (b) b.onclick = () => { S.settings.foodGuide = true; saveSettings(S.settings); loadFood(trip); };
+    return;
+  }
+  const google = (q) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+  const typical = f.typical?.length
+    ? `<div class="typical">🥘 <b>Comida típica:</b> ${f.typical.map(esc).join(' ')} <small>(Wikipédia)</small></div>`
+    : `<p class="hint">Não achei o prato típico de ${esc(cityName || 'lá')}. <a href="https://www.google.com/search?q=${encodeURIComponent('comida típica ' + cityName)}" target="_blank" rel="noopener">Pesquisar</a></p>`;
+  const list = f.error ? `<p class="hint">${f.error}</p>` : f.places.length ? `<ul class="tl">${f.places.map((r, i) => `
+      <li><b>${esc(r.name)}</b>
+        <span class="sub">${r.kind}${r.cuisine ? ' · ' + r.cuisine : ''} · ${fmtDist(r.d)} do destino</span>
+        ${r.hours ? `<span class="sub">⏰ ${esc(hoursPt(r.hours))}</span>` : ''}
+        <span class="sub"><a href="${google(r.name + ' ' + cityName)}" target="_blank" rel="noopener">ver avaliações</a>${r.site ? ` · <a href="${esc(r.site)}" target="_blank" rel="noopener">site</a>` : ''} · <a href="#" data-fsave="${i}">⭐ salvar</a></span></li>`).join('')}</ul>`
+    : '<p class="hint">O mapa não tem restaurantes cadastrados perto do destino.</p>';
+  box.innerHTML = `<h4>🍽️ Onde comer${cityName ? ' em ' + esc(cityName) : ''}</h4>${typical}${list}
+    <p class="hint">Até 10 lugares, os mais conhecidos no mapa primeiro (redes de fast food ficam de fora). Veja as avaliações antes de ir. · <a href="#" id="foodOff">${S.settings.foodGuide ? 'não buscar mais sozinho' : ''}</a></p>`;
+  for (const a of box.querySelectorAll('[data-fsave]')) a.onclick = async (e) => {
+    e.preventDefault();
+    const r = f.places[+a.dataset.fsave];
+    await Places.saveFavorite({ name: r.name, icon: '🍽️', lat: r.lat, lon: r.lon, label: city });
+    drawPlaces();
+    a.textContent = '✓ salvo';
+  };
+  const off = $('#foodOff');
+  if (off) off.onclick = (e) => { e.preventDefault(); S.settings.foodGuide = false; saveSettings(S.settings); off.textContent = ''; toast('Ok: a comida só aparece quando você tocar no botão.', 3500); };
+}
+
+async function loadFood(trip) {
+  const dest = trip.places?.[trip.places.length - 1];
+  if (!dest) return;
+  trip.food = { loading: true };
+  renderFood(trip);
+  const city = trip.guide?.city || (await cityAt(dest.lat, dest.lon).catch(() => '')) || '';
+  const [typical, places] = await Promise.all([typicalFood(city), foodNear(dest).catch(() => null)]);
+  trip.food = places ? { typical, places } : { typical, places: [], error: 'Não consegui buscar os restaurantes agora (sem internet ou servidor do mapa ocupado).' };
+  renderFood(trip);
+  if (places) saveTrip(trip);
 }
 
 async function loadGuide(trip) {
@@ -2565,6 +2617,7 @@ async function loadGuide(trip) {
   }
   renderGuide(trip);
   if (!trip.guide.error) saveTrip(trip);
+  if (S.settings.foodGuide && !trip.food) loadFood(trip);
 }
 
 // Descobre o nome da cidade dos pernoites sugeridos (uma consulta por vez).

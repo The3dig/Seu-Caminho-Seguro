@@ -507,3 +507,5 @@ body.driving.near-turn .krav .k-say { display: none; }
 .friend-mk { display: inline-flex; align-items: center; gap: 4px; background: #6a1b9a; color: #fff; border: 2px solid #fff; border-radius: 999px; padding: 2px 8px 2px 4px; font-size: 13px; white-space: nowrap; box-shadow: 0 2px 8px #0009; }
 .friend-mk span { font-size: 16px; }
 .tl .closed { color: var(--red); }
+.typical { background: rgba(255,200,80,.08); border-left: 3px solid var(--gold); padding: 8px 10px; border-radius: 8px; margin: 6px 0 8px; font-size: 14px; }
+#foodBox { margin-top: 14px; }
