@@ -314,12 +314,65 @@ function show(id) {
   }
   if (id === 'v-places') renderPlaces();
   if (id === 'v-cities') renderCityReport();
-  if (id === 'v-trip') initTripForm();
+  if (id === 'v-trip') { initTripForm(); renderTpChips(); }
+  // Viagem em andamento e você foi às abas: a pílula "Voltar para a viagem".
+  $('#backTrip').hidden = !S.nav || id === 'v-drive' || id === 'v-intro';
+  if (id === 'v-plan') renderModeSeg();
   if (id !== 'v-places' && id !== 'v-cities') layers.track.clearLayers();
   if (id === 'v-cities') $('#tabs button[data-view="v-places"]').classList.add('active');
   setTimeout(() => map.invalidateSize(), 50);
 }
 for (const b of document.querySelectorAll('#tabs button')) b.onclick = () => show(b.dataset.view);
+// Sair da tela da viagem sem encerrar: os avisos (voz, radares) continuam.
+function toMenu() {
+  $('#stepsPanel').hidden = true;
+  $('#iconMenu').hidden = true;
+  setMapRotation(false);
+  S.follow = false;
+  show('v-plan');
+  toast('🚗 A viagem continua (avisos de voz ligados). Toque em “Voltar” embaixo para retornar.', 4500);
+}
+$('#stepsMenu').onclick = toMenu;
+$('#qmMenu').onclick = toMenu;
+$('#backTrip').onclick = () => { show('v-drive'); S.follow = true; requestAnimationFrame(placeSideButtons); };
+
+// Carro / A pé direto na tela da rota (o modo a pé usa rota de pedestre).
+function renderModeSeg() {
+  const walk = !!S.settings.walkTest;
+  for (const b of $('#modeSeg').querySelectorAll('button')) b.classList.toggle('active', (b.dataset.m === 'walk') === walk);
+}
+for (const b of $('#modeSeg').querySelectorAll('button')) {
+  b.onclick = async () => {
+    S.settings.walkTest = b.dataset.m === 'walk';
+    await saveSettings(S.settings);
+    renderModeSeg();
+    $('#walkWarn').hidden = !S.settings.walkTest;
+    clearAlts(); showRouteBar(null);
+    toast(S.settings.walkTest ? '🚶 Modo a pé: rota para pedestre e avisos em distâncias curtas. Trace a rota de novo.' : '🚗 Modo carro.', 3500);
+  };
+}
+
+// Planejar: lugares salvos (Casa, Trabalho…) como atalhos na saída e no destino.
+async function renderTpChips() {
+  const favs = await Places.favorites();
+  const mk = (sel, input, here) => {
+    const box = $(sel);
+    box.innerHTML = (here ? '<button class="btn" data-i="here">📍 Onde estou</button>' : '') +
+      favs.map((p, i) => `<button class="btn" data-i="${i}">${p.icon || '⭐'} <span>${esc(p.name)}</span></button>`).join('');
+    for (const b of box.querySelectorAll('button')) {
+      b.onclick = () => {
+        if (b.dataset.i === 'here') { $(input).value = ''; return; }
+        const p = favs[+b.dataset.i];
+        const text = `${p.icon || '⭐'} ${p.name}`;
+        S.presets.set(text, { lat: p.lat, lon: p.lon, label: text });
+        $(input).value = text;
+      };
+    }
+  };
+  mk('#tpFromChips', '#tpFrom', true);
+  mk('#tpToChips', '#tpTo', false);
+}
+
 
 let toastTimer;
 function toast(msg, ms = 5000) {
@@ -621,7 +674,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v50';
+const APP_VERSION = 'v51';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1159,6 +1212,7 @@ $('#btnFree').onclick = () => startDrive(null, false);
 // ================= Dirigindo =================
 async function startDrive(trip, simulate, resume = null) {
   Voice.unlock();
+  if (S.nav) stopDrive(); // começou outra viagem pelo menu: encerra a anterior (fica salva no histórico)
   layers.me.clearLayers(); // tira o ponto de "onde você está" do planejamento
   S.rec = null;
   if (!simulate && S.settings.recordDrives) {
@@ -1294,6 +1348,7 @@ document.addEventListener('visibilitychange', () => {
 
 function stopDrive() {
   S.companion = null;
+  $('#backTrip').hidden = true;
   setMapRotation(false);
   // Chegou: o caminho que você DIRIGIU (ex.: pela avenida da praia) fica
   // guardado como o seu de dia/noite para esta origem e destino.
@@ -1575,8 +1630,9 @@ function render(st) {
     mascot.update({ kmh: st.kmh, heading: rotOn ? 0 : f.heading, arrived: !!st.arrived, quiet, mode: S.settings.mascotFun || 'always' });
   }
   if (f.heading != null && st.kmh > 3) S.lastHeading = f.heading;
-  setMapRotation(!!S.nav && S.follow, S.lastHeading);
-  if (S.follow) {
+  const inDrive = !$('#v-drive').hidden;
+  setMapRotation(!!S.nav && S.follow && inDrive, S.lastHeading);
+  if (S.follow && inDrive) {
     const z = S.nav?.walk ? 17 : st.kmh > 80 ? 15 : 16;
     let c = [f.lat, f.lon];
     // Mapa girando: o carro fica mais embaixo, para ver mais da estrada à frente.
@@ -1620,6 +1676,7 @@ function render(st) {
     $('#turnText').textContent = st.step.type === 'arrive' ? 'até o destino — siga a rota' : st.step.text;
   }
   if (st.arrived) onArrived(st);
+  if (!S.nav) return; // encerrou sozinha na chegada
   if (st.arrived) {
     $('#turnArrow').textContent = '🏁';
     $('#turnDist').textContent = 'Chegou!';
@@ -1643,7 +1700,8 @@ function render(st) {
     const gap = (nf[1]?.along ?? st.total) - nf[0].along;
     const far = gap > S.settings.fuelGapKm * 1000;
     cards.push(card('⛽ Próximo posto', nf[0], far ? `depois: só em ${fmtDist(gap)}` : (nf[1] ? `seguinte: +${fmtDist(nf[1].d)}` : ''), far));
-  } else cards.push('<div class="poi far"><div class="k">⛽ Próximo posto</div><div class="v">nenhum</div><div class="n">até o destino</div></div>');
+  } else if (S.nav?.trip && !S.nav.trip.poisOk) cards.push('<div class="poi far"><div class="k">⛽ Próximo posto</div><div class="v">buscando…</div><div class="n">baixando postos do caminho</div></div>');
+  else cards.push(`<div class="poi far"><div class="k">⛽ Próximo posto</div><div class="v">nenhum</div><div class="n">${S.nav?.trip?.poisPartial ? 'sem dados neste trecho' : 'até o destino'}</div></div>`);
   if (st.next.food[0]) cards.push(card('🍽️ Comer', st.next.food[0]));
   const rest = [...st.next.rest, ...st.next.lodging].sort((a, b) => a.d - b.d)[0];
   if (rest) cards.push(card(rest.cat === 'lodging' ? '🛏️ Dormir' : '🅿️ Parada', rest));
@@ -2794,6 +2852,18 @@ function onStopEnd(st, dur) {
 }
 
 $('#btnStopTraffic').onclick = () => { $('#stopBox').hidden = true; curStop = null; };
+// Fechar sem registrar (✕ ou tocando fora da caixinha). Se foi o ☕, desfaz a parada aberta.
+function closeStopBox() {
+  if ($('#stopBox').hidden) return;
+  $('#stopBox').hidden = true;
+  if (curStop && !curStop.auto && S.nav?.inStop === curStop) S.nav.inStop = null;
+  curStop = null;
+}
+$('#btnStopClose').onclick = closeStopBox;
+document.addEventListener('pointerdown', (e) => {
+  if ($('#stopBox').hidden || e.target.closest('#stopBox') || e.target.closest('#btnPause')) return;
+  closeStopBox();
+}, true);
 $('#btnPause').onclick = () => {
   const st = S.nav?.manualStop();
   if (!st) return toast('Aguardando sinal de GPS…');

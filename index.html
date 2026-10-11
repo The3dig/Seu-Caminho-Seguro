@@ -86,6 +86,7 @@
       <button class="btn icon" id="btnSwap" title="Inverter saída e destino">⇅</button>
     </div>
     <div class="chips sugg" id="suggestions"></div>
+    <div class="seg mode-seg" id="modeSeg"><button data-m="car">🚗 Carro</button><button data-m="walk">🚶 A pé</button></div>
     <button class="btn primary wide" id="btnRoute">Traçar rota</button>
     <div id="geoResults"></div>
     <div id="routeAlts"></div>
@@ -116,7 +117,7 @@
       <div class="turn-more" id="turnMore">☰</div>
     </div>
     <div class="steps-panel" id="stepsPanel" hidden>
-      <div class="sp-head"><div><b>Trajeto até o destino</b><div class="sub" id="stepsTolls"></div></div><button class="btn" id="stepsClose">✕</button></div>
+      <div class="sp-head"><div><b>Trajeto até o destino</b><div class="sub" id="stepsTolls"></div></div><button class="btn" id="stepsMenu" title="Ir às abas sem encerrar">⌂ Menu</button><button class="btn" id="stepsClose">✕</button></div>
       <ul class="list" id="stepsList"></ul>
     </div>
     <div class="offroute" id="offRoute" hidden>
@@ -178,7 +179,7 @@
     <div class="confirm" id="stopBox" hidden>
       <p id="stopText">🅿️ Parou? Qual o motivo?</p>
       <div class="reasons" id="stopReasons"></div>
-      <button class="btn link" id="btnStopTraffic">🚦 Era trânsito — não registrar</button>
+      <div class="row"><button class="btn link" id="btnStopTraffic">🚦 Era trânsito — não registrar</button><button class="btn" id="btnStopClose">✕ Fechar</button></div>
     </div>
 
     <div class="confirm" id="markBox" hidden>
@@ -200,8 +201,10 @@
     <p class="hint">Diga de onde sai, para onde vai e onde quer parar. O app monta o roteiro dia a dia com pausas em postos e restaurantes, onde dormir, pedágios e combustível.</p>
     <label>Saída</label>
     <input id="tpFrom" placeholder="📍 Onde você está agora (ou digite outro lugar)" autocomplete="off">
+    <div class="chips sugg" id="tpFromChips"></div>
     <label>Destino</label>
     <input id="tpTo" placeholder="Cidade ou endereço" autocomplete="off">
+    <div class="chips sugg" id="tpToChips"></div>
     <label>Cidades onde quer parar (opcional)</label>
     <div id="tpStops"></div>
     <button class="btn link" id="tpAddStop">+ adicionar cidade de parada</button>
@@ -571,9 +574,12 @@
         <option value="off">Desligadas (só anda)</option>
       </select>
       <label class="check"><input type="checkbox" id="qmComp"> 🗣️ Kravenox companheiro: fala de vez em quando na viagem (contra o tédio e o sono)</label>
+      <button class="btn wide" id="qmMenu">⌂ Ir ao menu do app (a viagem continua)</button>
       <button class="btn primary wide" id="qmClose">Pronto</button>
     </div>
   </div>
+
+  <button class="back-trip" id="backTrip" hidden>🚗 Viagem em andamento · <b>Voltar</b></button>
 
   <div class="pick-banner" id="pickBanner" hidden>
     <div id="pickText">Toque no mapa no ponto exato</div>
