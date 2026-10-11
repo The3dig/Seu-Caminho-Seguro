@@ -675,7 +675,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v56';
+const APP_VERSION = 'v57';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -2732,13 +2732,30 @@ $('#shJoin').onclick = async () => {
 };
 function inviteShare() {
   const code = S.settings.share?.code;
-  const text = `Vamos nos ver no mapa no Seu Caminho Seguro: aba Lugares › Amigo no mapa › código ${code}\nhttps://the3dig.github.io/Seu-Caminho-Seguro/`;
+  // O link já leva o código: o amigo só abre no navegador (não precisa instalar), põe o nome e toca Entrar.
+  const text = `Vamos nos ver no mapa? Abra o link (não precisa instalar nada), coloque seu nome e toque em Entrar:\nhttps://the3dig.github.io/Seu-Caminho-Seguro/#amigo=${code}\n(código ${code})`;
   (navigator.share ? navigator.share({ text }) : navigator.clipboard.writeText(text).then(() => toast('Convite copiado.', 2500))).catch(() => {});
 }
 $('#shInvite').onclick = inviteShare;
 $('#shStop').onclick = stopShare;
+$('#shJoinCode').onkeydown = (e) => { if (e.key === 'Enter') $('#shJoin').click(); };
 // Ao abrir o app, retoma o grupo (se estava compartilhando).
 function resumeShare() { const c = S.settings.share?.code; if (c && !share) { $('#shName').value = S.settings.share.name || ''; startShare(c); } }
+// Abriu pelo link do convite (#amigo=KRAV-…): já deixa o código pronto.
+async function joinFromLink() {
+  const m = location.hash.match(/amigo=([A-Za-z0-9-]+)/);
+  if (!m) return false;
+  history.replaceState(null, '', location.pathname + location.search);
+  const c = cleanCode(m[1]);
+  if (c.length !== 8 || cleanCode(S.settings.share?.code) === c) return false;
+  if (share) await stopShare(); // estava em outro grupo: troca para o do convite
+  $('#shJoinCode').value = `KRAV-${c.slice(0, 4)}-${c.slice(4)}`;
+  show('v-places');
+  $('#friendCard').scrollIntoView({ block: 'center' });
+  $('#shName').focus();
+  toast('👥 Convite recebido. Coloque seu nome e toque em Entrar.', 6000);
+  return true;
+}
 
 // ---------- Relatório da semana (a pé e de carro) ----------
 function weekStart(offsetWeeks = 0) {
@@ -3592,6 +3609,8 @@ async function init() {
     // Voltou da tela de autorização do Spotify.
     show('v-music');
     toast(spAuth.ok ? '🟢 Spotify conectado! Escolha a trilha ou toque ▶.' : '⚠ Spotify: ' + spAuth.error, 7000);
+  } else if (await joinFromLink()) {
+    // Abriu pelo convite do amigo: vai direto para o cartão do grupo.
   } else {
     show('v-intro');
     // Tenta tocar a trilha na abertura (alguns navegadores só permitem após um toque).
