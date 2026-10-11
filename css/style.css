@@ -501,3 +501,6 @@ body.driving.near-turn .krav .k-say { display: none; }
 .rp-grid span { font-size: 20px; } .rp-grid b { font-size: 20px; } .rp-grid small { opacity: .75; }
 .week { background: var(--panel); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
 .week-row { padding: 4px 0; } .week-row small { opacity: .7; }
+.friend-card { background: var(--panel); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+.friend-mk { display: inline-flex; align-items: center; gap: 4px; background: #6a1b9a; color: #fff; border: 2px solid #fff; border-radius: 999px; padding: 2px 8px 2px 4px; font-size: 13px; white-space: nowrap; box-shadow: 0 2px 8px #0009; }
+.friend-mk span { font-size: 16px; }

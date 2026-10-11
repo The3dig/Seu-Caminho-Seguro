@@ -231,6 +231,22 @@
 
   <!-- ========== LUGARES E HISTÓRICO ========== -->
   <section id="v-places" class="view sheet" hidden>
+    <h2>👥 Amigo no mapa</h2>
+    <div class="friend-card" id="friendCard">
+      <p class="hint" style="margin-top:0">Vejam um ao outro no mapa e quanto tempo falta para se encontrarem (a pé ou de carro). Um cria o código e manda pelo WhatsApp; o outro entra com ele. Funciona com o app aberto e com internet.</p>
+      <label>Seu nome (o amigo vê)</label>
+      <input id="shName" placeholder="ex.: Rone" autocomplete="off">
+      <div id="shOff">
+        <button class="btn primary wide" id="shCreate">➕ Criar código e convidar</button>
+        <div class="row" style="margin-top:8px"><input id="shJoinCode" placeholder="KRAV-XXXX-XXXX" autocapitalize="characters" autocomplete="off"><button class="btn" id="shJoin">Entrar</button></div>
+      </div>
+      <div id="shOn" hidden>
+        <p>Código do grupo: <b id="shCode"></b> <button class="btn" id="shInvite">📤 Mandar</button></p>
+        <ul class="list" id="shFriends"></ul>
+        <button class="btn wide" id="shStop">⏹ Parar de compartilhar</button>
+      </div>
+    </div>
+
     <h2>Meus lugares</h2>
     <ul class="list" id="favList"></ul>
     <button class="btn wide" id="btnAddPlace">➕ Novo lugar</button>

@@ -14,6 +14,7 @@ import { searchPlaces, suggestPlaces, setSearchKey } from './search.js';
 import * as Cities from './cities.js';
 import { Mascot, PORTRAIT } from './mascot.js';
 import { Companion } from './companion.js';
+import { Share, newCode, cleanCode } from './share.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -674,7 +675,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v56';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -1353,6 +1354,7 @@ document.addEventListener('visibilitychange', () => {
 
 function stopDrive() {
   S.companion = null;
+  setTimeout(ensureShareWatch, 500); // continua mandando a posição ao amigo
   document.body.classList.remove('near-turn');
   S.rejoinTried = false;
   $('#backTrip').hidden = true;
@@ -1620,6 +1622,7 @@ function render(st) {
   const f = st.fix;
   S.lastFix = f;
   if (S.settings.logCities && !S.simulating) Cities.track(f);
+  if (share) { share.send(f, { walk: !!S.settings.walkTest }); if (friendInfo.size) updateFriendInfo(); }
   if (S.rec) {
     S.rec.add(f, st.kmh);
     if (Date.now() - lastActiveSave > 60000) {
@@ -1737,6 +1740,8 @@ function render(st) {
     const opt = pl.optional ? `<div class="n" style="color:var(--gold)">opcional · você parou ${pl.agoMin ? `há ${pl.agoMin} min` : 'há pouco'}</div>` : '';
     cards.push(`<div class="poi ${pl.optional ? 'optional' : 'far'}"><div class="k">${ic} Parada planejada</div><div class="v">${fmtDist(pl.d)}</div><div class="n">${esc(pl.name)} · ${fmtDur(pl.sec)}</div>${opt}</div>`);
   }
+  // Amigo no mapa: card com distância e tempo até ele.
+  for (const i of friendInfo.values()) cards.push(`<div class="poi"><div class="k">👥 ${esc(i.p.name)}</div><div class="v">${i.road ? (i.road.km < 1 ? Math.round(i.road.km * 1000) + ' m' : i.road.km.toFixed(1).replace('.', ',') + ' km') : i.km != null ? (i.km < 1 ? Math.round(i.km * 1000) + ' m' : i.km.toFixed(1).replace('.', ',') + ' km') : '?'}</div><div class="n">${i.road ? '~' + fmtDur(i.road.sec) + (i.road.walk ? ' a pé' : ' de carro') : 'em linha reta'}</div></div>`);
   const nf = st.next.fuel;
   if (nf[0]) {
     const gap = (nf[1]?.along ?? st.total) - nf[0].along;
@@ -2626,6 +2631,115 @@ $('#to').addEventListener('input', updateRecentChips);
 $('#to').addEventListener('focus', updateRecentChips);
 $('#to').addEventListener('blur', () => setTimeout(updateRecentChips, 350));
 
+// ---------- Amigo no mapa (posição em tempo real) ----------
+let share = null, shareWatch = null;
+const friendMarkers = new Map();
+const friendInfo = new Map(); // id -> { p, road: {km, sec}, roadAt, near }
+function myFix() { return S.lastFix || S.shareFix || null; }
+async function startShare(code) {
+  const name = $('#shName').value.trim() || 'Amigo';
+  const cfg = { code, name, id: S.settings.share?.id || uid() };
+  S.settings.share = cfg;
+  await saveSettings(S.settings);
+  share?.stop();
+  share = new Share(code, { id: cfg.id, name }, onFriend, (st) => { $('#shCode').title = st; });
+  await share.start();
+  ensureShareWatch();
+  const f = myFix();
+  if (f) share.send(f, { walk: !!S.settings.walkTest, force: true });
+  renderShare();
+}
+// Sem viagem aberta: usa o GPS só para mandar a sua posição (na viagem, vai junto com a navegação).
+function ensureShareWatch() {
+  if (!share || S.nav || !navigator.geolocation || shareWatch != null) return;
+  shareWatch = navigator.geolocation.watchPosition((p) => {
+    S.shareFix = { lat: p.coords.latitude, lon: p.coords.longitude, speed: p.coords.speed, heading: p.coords.heading };
+    share?.send(S.shareFix, { walk: !!S.settings.walkTest });
+    updateFriendInfo();
+  }, () => {}, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+async function stopShare() {
+  share?.stop(); share = null;
+  if (shareWatch != null) { navigator.geolocation.clearWatch(shareWatch); shareWatch = null; }
+  for (const m of friendMarkers.values()) m.remove();
+  friendMarkers.clear(); friendInfo.clear();
+  S.settings.share = { ...(S.settings.share || {}), code: null };
+  await saveSettings(S.settings);
+  renderShare();
+}
+function onFriend(p) {
+  const first = !friendInfo.has(p.id);
+  const info = friendInfo.get(p.id) || {};
+  info.p = p;
+  friendInfo.set(p.id, info);
+  let m = friendMarkers.get(p.id);
+  const html = `<div class="friend-mk upright"><span>${p.walk ? '🚶' : '🚗'}</span><b>${esc(p.name)}</b></div>`;
+  if (!m) { m = L.marker([p.lat, p.lon], { icon: L.divIcon({ html, className: '', iconSize: [90, 30], iconAnchor: [14, 15] }), zIndexOffset: 900 }).addTo(map); friendMarkers.set(p.id, m); }
+  else m.setLatLng([p.lat, p.lon]);
+  if (first) toast(`👥 ${p.name} apareceu no mapa.`, 4000);
+  updateFriendInfo();
+}
+// Distância em linha reta (na hora) e pelo caminho, a pé ou de carro (a cada ~45 s).
+async function updateFriendInfo() {
+  const me = myFix();
+  for (const [id, info] of friendInfo) {
+    const p = info.p;
+    if (me) {
+      info.km = Math.hypot((p.lat - me.lat) * 111.32, (p.lon - me.lon) * 111.32 * Math.cos((me.lat * Math.PI) / 180));
+      // Chegando perto: avisa uma vez.
+      if (info.km < 0.15 && !info.near) { info.near = true; Voice.speak(`${p.name} está bem perto, a menos de 150 metros.`); }
+      if (info.km > 0.4) info.near = false;
+      if (navigator.onLine && (!info.roadAt || Date.now() - info.roadAt > 45000) && info.km > 0.05) {
+        info.roadAt = Date.now();
+        const walk = !!S.settings.walkTest;
+        route([{ lat: me.lat, lon: me.lon }, { lat: p.lat, lon: p.lon }], { foot: walk })
+          .then(([r]) => { info.road = { km: r.distance / 1000, sec: walk ? (r.distance / 1.3) : r.duration, walk }; renderShare(); })
+          .catch(() => {});
+      }
+    }
+  }
+  renderShare();
+}
+function friendLine(info) {
+  const ago = Math.round((Date.now() - info.p.t) / 60000);
+  const dist = info.road ? info.road.km : info.km;
+  const fmt = (k) => (k == null ? '?' : k < 1 ? `${Math.round(k * 1000)} m` : `${k.toFixed(1).replace('.', ',')} km`);
+  const time = info.road ? ` · ~${fmtDur(info.road.sec)} ${info.road.walk ? 'a pé' : 'de carro'}` : '';
+  return `${fmt(dist)}${time}${ago >= 2 ? ` · visto há ${ago} min` : ''}`;
+}
+function renderShare() {
+  const cfg = S.settings.share || {};
+  const on = !!(share && cfg.code);
+  $('#shOff').hidden = on;
+  $('#shOn').hidden = !on;
+  if (!$('#shName').value) $('#shName').value = cfg.name || '';
+  if (on) {
+    $('#shCode').textContent = cfg.code;
+    $('#shFriends').innerHTML = friendInfo.size ? [...friendInfo.values()].map((i) => `<li><div class="grow"><div class="title">${i.p.walk ? '🚶' : '🚗'} ${esc(i.p.name)}</div><div class="sub">${friendLine(i)}</div></div><button class="btn" data-id="${i.p.id}">🗺</button></li>`).join('') : '<p class="hint">Esperando o amigo entrar com o código…</p>';
+    for (const b of $('#shFriends').querySelectorAll('button')) b.onclick = () => { const i = friendInfo.get(b.dataset.id); show('v-plan'); map.setView([i.p.lat, i.p.lon], 16); };
+  }
+}
+$('#shCreate').onclick = async () => {
+  const code = newCode();
+  await startShare(code);
+  inviteShare();
+};
+$('#shJoin').onclick = async () => {
+  const c = cleanCode($('#shJoinCode').value);
+  if (c.length !== 8) return toast('Digite o código completo (ex.: KRAV-7G2Q-9XPL).', 3500);
+  await startShare(`KRAV-${c.slice(0, 4)}-${c.slice(4)}`);
+  toast('👥 Entrou no grupo. Assim que o amigo mandar a posição, ele aparece no mapa.', 4500);
+};
+function inviteShare() {
+  const code = S.settings.share?.code;
+  const text = `Vamos nos ver no mapa no Seu Caminho Seguro: aba Lugares › Amigo no mapa › código ${code}\nhttps://the3dig.github.io/Seu-Caminho-Seguro/`;
+  (navigator.share ? navigator.share({ text }) : navigator.clipboard.writeText(text).then(() => toast('Convite copiado.', 2500))).catch(() => {});
+}
+$('#shInvite').onclick = inviteShare;
+$('#shStop').onclick = stopShare;
+// Ao abrir o app, retoma o grupo (se estava compartilhando).
+function resumeShare() { const c = S.settings.share?.code; if (c && !share) { $('#shName').value = S.settings.share.name || ''; startShare(c); } }
+
 // ---------- Relatório da semana (a pé e de carro) ----------
 function weekStart(offsetWeeks = 0) {
   const d = new Date();
@@ -2684,6 +2798,7 @@ $('#rpClose').onclick = () => { $('#reportModal').hidden = true; };
 $('#reportModal').onclick = (e) => { if (e.target.id === 'reportModal') $('#reportModal').hidden = true; };
 
 async function renderPlaces() {
+  renderShare();
   const favs = await Places.favorites();
   const fl = $('#favList');
   const hasHome = favs.some((p) => p.kind === 'home'), hasWork = favs.some((p) => p.kind === 'work');
@@ -3457,6 +3572,7 @@ async function init() {
   showPersonalizeTip();
   showInstallCard();
   checkOffline();
+  resumeShare();
   // Pede ao celular para não apagar os dados do app (radares, viagens…).
   navigator.storage?.persist?.().catch(() => {});
   setSearchKey(S.settings.tomtomKey || CONFIG.tomtomKey);
