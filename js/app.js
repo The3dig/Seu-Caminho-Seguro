@@ -346,6 +346,7 @@ function renderModeSeg() {
 for (const b of $('#modeSeg').querySelectorAll('button')) {
   b.onclick = async () => {
     S.settings.walkTest = b.dataset.m === 'walk';
+    S.settings.walkSince = Date.now();
     await saveSettings(S.settings);
     renderModeSeg();
     $('#walkWarn').hidden = !S.settings.walkTest;
@@ -676,7 +677,7 @@ function getPosition(opts = {}) {
 
 // ---------- Saída = onde você está ----------
 // Mesma versão do sw.js: aparece em Ajustes para saber se o celular já pegou a nova.
-const APP_VERSION = 'v61';
+const APP_VERSION = 'v62';
 let hereMarker = null;
 let mascot = null; // Kravenox (um só, usado no planejamento e na viagem)
 let lastAddrAt = null;
@@ -978,7 +979,7 @@ function showRouteBar(info) {
   bar.hidden = !info;
   if ($('#v-plan').classList.contains('collapsed')) setTimeout(() => setPlanCollapsed(true), 0);
   if (!info) return;
-  $('#rbMain').textContent = `${info.distance < 1000 ? `${Math.round(info.distance)} metros` : fmtDist(info.distance)} · ${fmtDur(info.duration)}`;
+  $('#rbMain').textContent = `${S.settings.walkTest ? '🚶 A pé · ' : ''}${info.distance < 1000 ? `${Math.round(info.distance)} metros` : fmtDist(info.distance)} · ${fmtDur(info.duration)}`;
   const fc = fuelCost(info.distance, carPrefs());
   $('#rbSub').textContent = `até ${info.dest} · chegada ${fmtClock(new Date(Date.now() + info.duration * 1000))} · ⛽ ~${moneyBR(fc.cost)}`;
 }
@@ -1115,7 +1116,7 @@ async function renderSummary(trip) {
       <h3 style="margin-top:0">${esc(trip.name)}</h3>
       <div class="grid">
         <div><b>${fmtDist(trip.distance)}</b><small>distância</small></div>
-        <div><b>${fmtDur(trip.duration)}</b><small>tempo previsto</small></div>
+        <div><b>${fmtDur(trip.duration)}</b><small>${S.settings.walkTest ? '🚶 a pé' : 'tempo previsto'}</small></div>
         <div><b>${nRadar}</b><small>radares</small></div>
         <div><b>${count('fuel')}</b><small>⛽ postos</small></div>
         <div><b>${count('food')}</b><small>🍽️ restaurantes</small></div>
@@ -1140,7 +1141,9 @@ async function renderSummary(trip) {
         return `<details><summary>💰 Pedágios (${tl.length}) · ${tl.some((t) => t.price == null) ? '~' : ''}${moneyBR(tot)}</summary><ul class="list">${tl.map((t, i) => `<li data-tl="${i}"><span>💰</span><div class="grow"><div class="title">${esc(t.name)}${t.freeFlow ? ' (free-flow)' : ''}</div><div class="sub">km ${(t.along / 1000).toFixed(0)} · ${t.price != null ? moneyBR(t.price) : `~${moneyBR(tollAvg())} estimativa — toque para informar`}</div></div></li>`).join('')}</ul></details>`;
       })()}
       <details><summary>🛏️ Paradas e hotéis (${count('rest') + count('lodging')})</summary><ul class="list">${listItems(pois.filter((p) => p.cat === 'rest' || p.cat === 'lodging'))}</ul></details>
-    </div>`;
+    </div>
+    <div class="summary guide-slot" data-trip="${trip.id}"></div>`;
+  renderGuide(trip);
   for (const li of $('#tripSummary').querySelectorAll('li[data-pi]')) li.onclick = () => openPoi(pois[+li.dataset.pi], trip);
   const tlList = tollPlazas(pois);
   for (const li of $('#tripSummary').querySelectorAll('li[data-tl]')) li.onclick = async () => { if (await askTollPrice(tlList[+li.dataset.tl])) renderSummary(trip); };
@@ -2273,6 +2276,7 @@ $('#btnSaveSettings').onclick = async () => {
   s.voice = $('#sVoice').checked;
   s.beep = $('#sBeep').checked;
   s.introMusic = $('#sIntroMusic').checked;
+  if (s.walkTest !== $('#sWalk').checked) s.walkSince = Date.now();
   s.walkTest = $('#sWalk').checked;
   s.nightMap = $('#sNight').value;
   s.mapRotate = $('#sMapRotate').checked;
@@ -2488,7 +2492,7 @@ function renderPlan(trip) {
       </div>
     </div>
     ${days}
-    <div class="day guide" id="guideBox"></div>`;
+    <div class="day guide guide-slot" data-trip="${trip.id}"></div>`;
   renderGuide(trip);
 
   $('#tpStart').onclick = async () => {
@@ -2515,19 +2519,20 @@ function renderPlan(trip) {
 
 // ---------- O que fazer no destino ----------
 function renderGuide(trip) {
-  const box = $('#guideBox');
-  if (!box) return;
+  for (const box of document.querySelectorAll('.guide-slot')) if (box.dataset.trip === trip.id) renderGuideIn(trip, box);
+}
+function renderGuideIn(trip, box) {
   const g = trip.guide;
   const city = g?.city ? ` em ${esc(g.city)}` : ' no destino';
   if (!g || g.loading) {
     box.innerHTML = `<h4>🏛️ O que fazer${city}</h4>${g?.loading ? '<p class="hint">Procurando os pontos turísticos perto do destino…</p>' : '<button class="btn wide" id="guideLoad">🏛️ Ver o que fazer no destino</button>'}`;
-    const b = $('#guideLoad');
+    const b = box.querySelector('#guideLoad');
     if (b) b.onclick = () => loadGuide(trip);
     return;
   }
   if (g.error) {
     box.innerHTML = `<h4>🏛️ O que fazer${city}</h4><p class="hint">${g.error}</p><button class="btn" id="guideLoad">🔄 Tentar de novo</button>`;
-    $('#guideLoad').onclick = () => loadGuide(trip);
+    box.querySelector('#guideLoad').onclick = () => loadGuide(trip);
     return;
   }
   if (!g.items.length) { box.innerHTML = `<h4>🏛️ O que fazer${city}</h4><p class="hint">O mapa não tem pontos turísticos cadastrados perto do destino.</p>`; return; }
@@ -2545,8 +2550,8 @@ function renderGuide(trip) {
     }).join('')}</ul>
     ${g.more?.length ? `<p class="sub"><b>Também vale</b> (outro dia ou se sobrar tempo): ${g.more.map((it) => `<a href="${mapsLink(it.lat, it.lon)}" target="_blank" rel="noopener">${esc(it.name)}</a>${it.closed ? ' <span class="closed">(fechado neste dia)</span>' : ''}`).join(' · ')}</p>` : ''}
     <p class="hint">Horários de funcionamento mudam: confira antes de ir. Muitos museus fecham às segundas.</p>
-    <div id="foodBox"></div>`;
-  renderFood(trip);
+    <div class="food-slot"></div>`;
+  renderFoodIn(trip, box.querySelector('.food-slot'));
   for (const a of box.querySelectorAll('[data-gsave]')) a.onclick = async (e) => {
     e.preventDefault();
     const it = g.items[+a.dataset.gsave];
@@ -2558,13 +2563,15 @@ function renderGuide(trip) {
 
 // Onde comer: opcional. Só busca se a pessoa pedir (ou se já pediu antes).
 function renderFood(trip) {
-  const box = $('#foodBox');
+  for (const box of document.querySelectorAll('.guide-slot')) if (box.dataset.trip === trip.id) renderFoodIn(trip, box.querySelector('.food-slot'));
+}
+function renderFoodIn(trip, box) {
   if (!box) return;
   const f = trip.food, city = trip.guide?.city || '';
   const cityName = city.split('/')[0];
   if (!f || f.loading) {
     box.innerHTML = `<h4>🍽️ Onde comer${cityName ? ' em ' + esc(cityName) : ''}</h4>${f?.loading ? '<p class="hint">Procurando a comida típica e os restaurantes…</p>' : '<button class="btn wide" id="foodLoad">🍽️ Ver comida típica e restaurantes</button>'}`;
-    const b = $('#foodLoad');
+    const b = box.querySelector('#foodLoad');
     if (b) b.onclick = () => { S.settings.foodGuide = true; saveSettings(S.settings); loadFood(trip); };
     return;
   }
@@ -2587,7 +2594,7 @@ function renderFood(trip) {
     drawPlaces();
     a.textContent = '✓ salvo';
   };
-  const off = $('#foodOff');
+  const off = box.querySelector('#foodOff');
   if (off) off.onclick = (e) => { e.preventDefault(); S.settings.foodGuide = false; saveSettings(S.settings); off.textContent = ''; toast('Ok: a comida só aparece quando você tocar no botão.', 3500); };
 }
 
@@ -2606,7 +2613,7 @@ async function loadFood(trip) {
 async function loadGuide(trip) {
   const dest = trip.places?.[trip.places.length - 1];
   if (!dest) return;
-  const arrive = trip.plan?.days?.at(-1)?.end?.time || Date.now();
+  const arrive = trip.plan?.days?.at(-1)?.end?.time || Date.now() + (trip.duration || 0) * 1000;
   trip.guide = { loading: true, city: trip.guide?.city || '' };
   renderGuide(trip);
   try {
@@ -3712,6 +3719,12 @@ async function init() {
     S.settings.tipPersonalizeSeen = true;
     S.settings.v34 = true;
     await saveSettings(S.settings);
+  }
+  // Modo a pé esquecido ligado (ex.: caminhada de ontem): volta para carro.
+  if (S.settings.walkTest && Date.now() - (S.settings.walkSince || 0) > 12 * 3600000) {
+    S.settings.walkTest = false;
+    await saveSettings(S.settings);
+    setTimeout(() => toast('🚗 Voltei para o modo carro (o modo a pé estava ligado desde a última caminhada).', 6000), 1500);
   }
   showPersonalizeTip();
   showInstallCard();

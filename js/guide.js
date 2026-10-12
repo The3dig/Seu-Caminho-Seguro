@@ -13,6 +13,8 @@ const TYPES = {
   theme_park: { icon: '🎢', label: 'Parque temático', min: 180, pts: 2 },
   attraction: { icon: '⭐', label: 'Atração', min: 45, pts: 2 },
   viewpoint: { icon: '🌄', label: 'Mirante', min: 20, pts: 2 },
+  windmill: { icon: '🌬️', label: 'Moinho', min: 30, pts: 3 },
+  venue: { icon: '🎪', label: 'Espaço de eventos', min: 60, pts: 1 },
   church: { icon: '⛪', label: 'Igreja', min: 25, pts: 1 },
   park: { icon: '🌳', label: 'Parque / jardim', min: 40, pts: 1 },
   monument: { icon: '🗿', label: 'Monumento', min: 10, pts: 1 },
@@ -27,6 +29,8 @@ function typeOf(t) {
   if (t.tourism === 'zoo') return 'zoo';
   if (t.tourism === 'theme_park') return 'theme_park';
   if (t.tourism === 'viewpoint') return 'viewpoint';
+  if (t.man_made === 'windmill' || t.historic === 'windmill' || /^moinho/i.test(t.name || '')) return 'windmill';
+  if (t.amenity === 'events_venue' || t.amenity === 'exhibition_centre') return 'venue';
   if (t.amenity === 'place_of_worship' || t.historic === 'church' || t.building === 'cathedral' || t.building === 'church') return 'church';
   if (t.leisure === 'park' || t.leisure === 'garden') return 'park';
   if (t.historic === 'monument' || t.historic === 'memorial') return 'monument';
@@ -73,17 +77,26 @@ async function wikiLine(tag) {
   } catch { return ''; }
 }
 
-// pt = destino; arrive = horário de chegada (Date). Retorna { items, start }.
-export async function sightsNear(pt, arrive = new Date(), radius = 4000) {
+function sightsQuery(pt, radius) {
   const a = `(around:${radius},${pt.lat},${pt.lon})`;
-  const els = await overpassQuery(`[out:json][timeout:40];
+  return `[out:json][timeout:40];
 (
   nwr${a}["tourism"~"^(museum|attraction|viewpoint|gallery|zoo|theme_park)$"]["name"];
-  nwr${a}["historic"~"^(castle|palace|manor|fort|monument|memorial|church|building)$"]["name"];
+  nwr${a}["historic"~"^(castle|palace|manor|fort|monument|memorial|church|building|windmill)$"]["name"];
+  nwr${a}["man_made"="windmill"]["name"];
   nwr${a}["amenity"="place_of_worship"]["name"]["wikidata"];
+  nwr${a}["amenity"~"^(events_venue|exhibition_centre)$"]["name"];
   nwr${a}["leisure"~"^(park|garden)$"]["name"]["wikidata"];
+  nwr${a}["leisure"~"^(park|garden)$"]["name"]["tourism"];
 );
-out center tags 200;`);
+out center tags 200;`;
+}
+
+// pt = destino; arrive = horário de chegada (Date). Retorna { items, more, end }.
+export async function sightsNear(pt, arrive = new Date(), radius = 4000) {
+  let els = await overpassQuery(sightsQuery(pt, radius));
+  // Cidade pequena (ex.: Holambra): se quase nada perto, procura mais longe.
+  if (els.length < 4) els = await overpassQuery(sightsQuery(pt, 12000)).catch(() => els);
   const seen = new Map();
   for (const el of els) {
     const t = el.tags || {};
@@ -102,7 +115,8 @@ out center tags 200;`);
   const freq = new Map();
   for (const x of seen.values()) for (const w of new Set(norm2(x.name))) freq.set(w, (freq.get(w) || 0) + 1);
   const words = (n) => new Set(norm2(n).filter((w) => w.length >= 5 && freq.get(w) < 3));
-  const ranked = [...seen.values()].filter((x) => x.score >= 3).sort((x, y) => y.score - x.score + (x.d - y.d) / 3000);
+  const min = [...seen.values()].filter((x) => x.score >= 3).length >= 6 ? 3 : 2; // cidade pequena: aceita os menos famosos
+  const ranked = [...seen.values()].filter((x) => x.score >= min).sort((x, y) => y.score - x.score + (x.d - y.d) / 3000);
   const kept = [];
   for (const it of ranked) {
     const w = words(it.name);
